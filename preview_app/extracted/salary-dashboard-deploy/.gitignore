@@ -13,7 +13,6 @@ build/
 .env
 .env.local
 .env.*.local
-!.env.example
 
 # IDE / Editor
 .vscode/*
@@ -50,5 +49,3 @@ coverage/
 .cache/
 .temp/
 .eslintcache
-*.tmp
-*.temp
