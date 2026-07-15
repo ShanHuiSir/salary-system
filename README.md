@@ -56,6 +56,33 @@ npm run preview
 
 ## 部署方式
 
+### 🚀 方式一: Docker Compose 一键部署（推荐 — 含数据库 + 后端）
+
+```bash
+# 1. 克隆项目
+git clone https://github.com/ShanHuiSir/salary-system.git
+cd salary-system
+
+# 2. 配置环境变量
+cp .env.example .env
+nano .env   # 修改数据库密码和 JWT 密钥
+
+# 3. 一键启动（PostgreSQL + 后端API + 前端Nginx）
+docker compose up -d
+
+# 4. 初始化数据库（首次启动）
+docker compose exec server npx prisma db push
+docker compose exec server npm run db:seed
+
+# 5. 访问
+# http://localhost   （或 http://<服务器IP>）
+# 账号: admin / 密码: admin123
+```
+
+详细部署文档：[docs/deploy-guide.md](docs/deploy-guide.md)
+
+### 方式二: 仅前端部署（无后端，数据存 localStorage）
+
 ### 方式一: 静态文件部署（推荐）
 
 构建后将 `dist/` 目录部署到任意静态文件服务器。
@@ -147,29 +174,36 @@ cp .env.example .env.local
 ## 项目结构
 
 ```
-app/
-├── .dockerignore            # Docker 构建忽略
-├── .env.development        # 开发环境变量
-├── .env.example            # 环境变量模板
-├── .env.production         # 生产环境变量
-├── .gitignore              # Git 忽略配置
-├── Dockerfile              # Docker 多阶段构建
-├── README.md               # 项目文档（本文件）
-├── components.json         # shadcn/ui 组件配置
-├── deploy.sh               # 部署脚本
-├── eslint.config.js        # ESLint 配置
-├── index.html              # HTML 入口
-├── nginx.conf              # Nginx 配置（Docker 部署用）
-├── package.json            # 项目依赖
-├── package-lock.json       # 依赖锁定
-├── postcss.config.js       # PostCSS 配置
-├── tailwind.config.js      # Tailwind CSS 配置
-├── tsconfig.json           # TypeScript 项目引用根配置
-├── tsconfig.app.json       # TypeScript 应用配置
-├── tsconfig.node.json      # TypeScript Node 配置
-├── vite.config.ts          # Vite 构建配置
-└── src/
-    ├── App.tsx             # 应用入口 + 路由配置
+salary-system/
+├── docker-compose.yml          # 一键部署编排 (PostgreSQL + 后端 + 前端)
+├── .env.example                # Docker 环境变量模板
+├── Dockerfile                  # 前端 Docker 镜像
+├── nginx.conf                  # Nginx 配置（含 API 反向代理）
+│
+├── server/                     # 🔧 后端 API 服务 (Express + Prisma)
+│   ├── Dockerfile              # 后端 Docker 镜像
+│   ├── package.json            # 后端依赖
+│   ├── tsconfig.json           # 后端 TypeScript 配置
+│   ├── .env.example            # 后端环境变量模板
+│   ├── prisma/
+│   │   ├── schema.prisma       # 数据库表结构定义 (10 张业务表 + 系统表)
+│   │   └── seed.ts             # 初始种子数据
+│   └── src/
+│       ├── index.ts            # Express 服务入口
+│       ├── routes/
+│       │   ├── auth.ts         # 登录/登出/Token 刷新
+│       │   └── data.ts         # 10 种数据类型的通用 CRUD
+│       ├── services/
+│       │   └── salaryCalculator.ts  # 薪资数据自动重算
+│       ├── middleware/
+│       │   ├── auth.ts         # JWT 认证中间件
+│       │   └── auditLog.ts     # 操作审计日志
+│       └── utils/
+│           ├── prisma.ts       # 数据库客户端
+│           └── response.ts     # 统一 API 响应格式
+│
+├── src/                        # 前端 React 应用
+│   ├── App.tsx             # 应用入口 + 路由配置
     ├── App.css             # 全局样式
     ├── index.css           # Tailwind + CSS 变量主题
     ├── main.tsx            # React 挂载入口
@@ -281,13 +315,23 @@ app/
 
 | 文档 | 说明 |
 |------|------|
+| [docs/deploy-guide.md](docs/deploy-guide.md) | **公司服务器部署指南** — 一键 Docker 部署、手动部署步骤、运维命令、故障排查 |
 | [docs/api-design.md](docs/api-design.md) | **后端 API 完整设计** — 35 个 REST 接口定义，含认证、CRUD、报表、导入导出、审计日志 |
 | [docs/database-schema.md](docs/database-schema.md) | **数据库表结构** — 10 张业务表 + 6 张系统表的完整 DDL，含索引、视图、触发器 |
 | [docs/dashboard-refactoring-plan.md](docs/dashboard-refactoring-plan.md) | **DashboardPage 重构方案** — 1672 行拆分为 6 个 hooks + 9 个 Section 组件的详细计划 |
 | [KNOWN_ISSUES.md](KNOWN_ISSUES.md) | 已知问题列表与规避方案 |
-| [DEPLOY.md](DEPLOY.md) | 部署指南（静态文件 / Docker / 一键脚本） |
+| [DEPLOY.md](DEPLOY.md) | 前端静态部署指南（Nginx / Docker） |
 
 ## 最近更新 (2026-07-15)
+
+### 后端搭建（新增 `server/` 目录）
+- Express + TypeScript + Prisma + PostgreSQL 后端服务
+- JWT 认证（accessToken + refreshToken）
+- 10 种数据类型的通用 CRUD API
+- 薪资数据自动重算服务
+- Docker Compose 一键部署（PostgreSQL + 后端 + 前端 + Nginx）
+- 操作审计日志记录
+- 初始种子数据脚本
 
 ### P1 代码重构
 - 新增 `src/utils/numberUtils.ts` — 统一数值处理（替代分散在 7 处的 `safeNum`）
@@ -300,6 +344,7 @@ app/
 - 完成 [API 接口设计文档](docs/api-design.md)
 - 完成 [数据库表结构设计](docs/database-schema.md)
 - 完成 [DashboardPage 重构方案](docs/dashboard-refactoring-plan.md)
+- 完成 [公司服务器部署指南](docs/deploy-guide.md)
 
 ## License
 

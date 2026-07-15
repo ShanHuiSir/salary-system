@@ -1,0 +1,275 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ========================================
+// 系统表
+// ========================================
+
+model User {
+  id               String    @id @default(uuid())
+  username         String    @unique
+  passwordHash     String    @map("password_hash")
+  displayName      String    @map("display_name")
+  email            String?
+  role             String    @default("hr_staff") // super_admin | hr_admin | hr_staff | dept_manager | finance | auditor
+  departmentScope  String[]  @default([]) @map("department_scope")
+  isActive         Boolean   @default(true) @map("is_active")
+  lastLoginAt      DateTime? @map("last_login_at")
+  loginAttempts    Int       @default(0) @map("login_attempts")
+  lockedUntil      DateTime? @map("locked_until")
+  createdAt        DateTime  @default(now()) @map("created_at")
+  updatedAt        DateTime  @updatedAt @map("updated_at")
+
+  refreshTokens RefreshToken[]
+  auditLogs     AuditLog[]
+
+  @@map("users")
+}
+
+model RefreshToken {
+  id        String   @id @default(uuid())
+  userId    String   @map("user_id")
+  tokenHash String   @unique @map("token_hash")
+  expiresAt DateTime @map("expires_at")
+  revoked   Boolean  @default(false)
+  createdAt DateTime @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("refresh_tokens")
+}
+
+model AuditLog {
+  id        String   @id @default(uuid())
+  userId    String?  @map("user_id")
+  username  String
+  action    String   // create | update | delete | import | export | login | logout
+  tableName String?  @map("table_name")
+  recordId  String?  @map("record_id")
+  changes   Json?
+  ipAddress String?  @map("ip_address")
+  userAgent String?  @map("user_agent")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  user User? @relation(fields: [userId], references: [id])
+
+  @@index([userId])
+  @@index([action])
+  @@index([tableName])
+  @@index([createdAt(sort: Desc)])
+  @@map("audit_logs")
+}
+
+// ========================================
+// 业务数据表
+// ========================================
+
+model MonthlyOverview {
+  id                  String   @id @default(uuid())
+  month               String   @unique // YYYY-MM
+  totalRevenue        Float    @default(0) @map("total_revenue")
+  selfOperatedRevenue Float    @default(0) @map("self_operated_revenue")
+  franchiseRevenue    Float    @default(0) @map("franchise_revenue")
+  platformRevenue     Float    @default(0) @map("platform_revenue")
+  factoryRevenue      Float?   @default(0) @map("factory_revenue")
+  totalLaborCost      Float    @default(0) @map("total_labor_cost")
+  avgSalary           Float    @default(0) @map("avg_salary")
+  laborCostRatio      Float    @default(0) @map("labor_cost_ratio")
+  perCapitaRevenue    Float    @default(0) @map("per_capita_revenue")
+  storeEfficiency     Float    @default(0) @map("store_efficiency")
+  momRevenue          Float    @default(0) @map("mom_revenue")
+  yoyRevenue          Float    @default(0) @map("yoy_revenue")
+  momLaborCost        Float    @default(0) @map("mom_labor_cost")
+  yoyLaborCost        Float    @default(0) @map("yoy_labor_cost")
+  createdBy           String?  @map("created_by")
+  createdAt           DateTime @default(now()) @map("created_at")
+  updatedAt           DateTime @updatedAt @map("updated_at")
+
+  @@map("monthly_overviews")
+}
+
+model Department {
+  id                String   @id @default(uuid())
+  month             String
+  department        String   // 全公司|总部|自营|线上|犀利工厂|加盟
+  headcount         Int      @default(0)
+  laborCost         Float    @default(0) @map("labor_cost")
+  avgSalary         Float    @default(0) @map("avg_salary")
+  perCapitaRevenue  Float    @default(0) @map("per_capita_revenue")
+  storeEfficiency   Float?   @default(0) @map("store_efficiency")
+  laborCostRatio    Float    @default(0) @map("labor_cost_ratio")
+  momLaborCost      Float    @default(0) @map("mom_labor_cost")
+  yoyLaborCost      Float    @default(0) @map("yoy_labor_cost")
+  momHeadcount      Int      @default(0) @map("mom_headcount")
+  yoyHeadcount      Int      @default(0) @map("yoy_headcount")
+  createdBy         String?  @map("created_by")
+  createdAt         DateTime @default(now()) @map("created_at")
+  updatedAt         DateTime @updatedAt @map("updated_at")
+
+  @@unique([month, department])
+  @@index([month])
+  @@index([department])
+  @@index([month, department])
+  @@map("departments")
+}
+
+model CostComposition {
+  id               String   @id @default(uuid())
+  month            String
+  department       String   // 总部|自营|线上|犀利工厂
+  fixedIncome      Float    @default(0) @map("fixed_income")
+  floatingIncome   Float    @default(0) @map("floating_income")
+  socialInsurance  Float    @default(0) @map("social_insurance")
+  severance        Float    @default(0)
+  outsourcing      Float    @default(0)
+  createdBy        String?  @map("created_by")
+  createdAt        DateTime @default(now()) @map("created_at")
+  updatedAt        DateTime @updatedAt @map("updated_at")
+
+  @@unique([month, department])
+  @@index([month, department])
+  @@map("cost_compositions")
+}
+
+model PositionLevel {
+  id           String   @id @default(uuid())
+  month        String
+  department   String   // 总部|自营|犀利工厂
+  level        String
+  headcount    Int      @default(0)
+  laborCost    Float    @default(0) @map("labor_cost")
+  ratio        Float    @default(0)
+  momHeadcount Int      @default(0) @map("mom_headcount")
+  yoyHeadcount Int      @default(0) @map("yoy_headcount")
+  createdBy    String?  @map("created_by")
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  @@unique([month, department, level])
+  @@index([month, department])
+  @@map("position_levels")
+}
+
+model StoreRegion {
+  id               String   @id @default(uuid())
+  month            String
+  region           String
+  storeCount       Int      @default(0) @map("store_count")
+  revenue          Float    @default(0)
+  laborCost        Float    @default(0) @map("labor_cost")
+  storeEfficiency  Float    @default(0) @map("store_efficiency")
+  personEfficiency Float    @default(0) @map("person_efficiency")
+  momRevenue       Float    @default(0) @map("mom_revenue")
+  yoyRevenue       Float    @default(0) @map("yoy_revenue")
+  createdBy        String?  @map("created_by")
+  createdAt        DateTime @default(now()) @map("created_at")
+  updatedAt        DateTime @updatedAt @map("updated_at")
+
+  @@unique([month, region])
+  @@index([month])
+  @@map("store_regions")
+}
+
+model BudgetLaborCost {
+  id              String   @id @default(uuid())
+  month           String
+  segment         String   // 总部|自营|线上|犀利工厂
+  center          String
+  department      String
+  businessLine    String   @map("business_line")
+  headcount       Int      @default(0)
+  laborCost       Float    @default(0) @map("labor_cost")
+  budgetLaborCost Float    @default(0) @map("budget_labor_cost")
+  createdBy       String?  @map("created_by")
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  @@unique([month, segment, center, department, businessLine])
+  @@index([month, segment])
+  @@map("budget_labor_costs")
+}
+
+model CostStructure {
+  id                      String   @id @default(uuid())
+  month                   String
+  segment                 String   // 总部|自营|线上|犀利工厂
+  attendanceSalary        Float    @default(0) @map("attendance_salary")
+  performanceBonus        Float    @default(0) @map("performance_bonus")
+  overtimePay             Float    @default(0) @map("overtime_pay")
+  annualLeaveAllowance    Float    @default(0) @map("annual_leave_allowance")
+  sickLeavePay            Float    @default(0) @map("sick_leave_pay")
+  maternityLeavePay       Float    @default(0) @map("maternity_leave_pay")
+  otherPayable            Float    @default(0) @map("other_payable")
+  employerSocialInsurance Float    @default(0) @map("employer_social_insurance")
+  createdBy               String?  @map("created_by")
+  createdAt               DateTime @default(now()) @map("created_at")
+  updatedAt               DateTime @updatedAt @map("updated_at")
+
+  @@unique([month, segment])
+  @@index([month, segment])
+  @@map("cost_structures")
+}
+
+model HqBusinessLine {
+  id             String   @id @default(uuid())
+  month          String
+  businessLine   String   @map("business_line")
+  headcount      Int      @default(0)
+  laborCost      Float    @default(0) @map("labor_cost")
+  fixedSalary    Float    @default(0) @map("fixed_salary")
+  variableSalary Float    @default(0) @map("variable_salary")
+  socialBenefits Float    @default(0) @map("social_benefits")
+  ratio          Float    @default(0)
+  createdBy      String?  @map("created_by")
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  @@unique([month, businessLine])
+  @@index([month])
+  @@map("hq_business_lines")
+}
+
+model HqDept {
+  id             String   @id @default(uuid())
+  month          String
+  department     String
+  businessLine   String   @map("business_line")
+  headcount      Int      @default(0)
+  laborCost      Float    @default(0) @map("labor_cost")
+  fixedSalary    Float    @default(0) @map("fixed_salary")
+  variableSalary Float    @default(0) @map("variable_salary")
+  ratio          Float    @default(0)
+  createdBy      String?  @map("created_by")
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  @@unique([month, department])
+  @@index([month])
+  @@map("hq_depts")
+}
+
+model Platform {
+  id               String   @id @default(uuid())
+  month            String
+  platform         String
+  headcount        Int      @default(0)
+  laborCost        Float    @default(0) @map("labor_cost")
+  fixedSalary      Float    @default(0) @map("fixed_salary")
+  variableSalary   Float    @default(0) @map("variable_salary")
+  revenue          Float    @default(0)
+  perCapitaRevenue Float    @default(0) @map("per_capita_revenue")
+  createdBy        String?  @map("created_by")
+  createdAt        DateTime @default(now()) @map("created_at")
+  updatedAt        DateTime @updatedAt @map("updated_at")
+
+  @@unique([month, platform])
+  @@index([month])
+  @@map("platforms")
+}
