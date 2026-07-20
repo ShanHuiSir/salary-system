@@ -10,7 +10,8 @@
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
     "deploy:static": "npm run build && echo 'dist/ 目录已生成，可部署到任意静态服务器'",
-    "deploy:docker": "docker build -t salary-dashboard:latest . && docker run -d --name salary-dashboard -p 80:80 --restart unless-stopped salary-dashboard:latest"
+    "deploy:docker": "docker compose up -d --build",
+    "deploy:frontend-docker": "docker build -t salary-dashboard:latest . && docker run -d --name salary-dashboard -p 80:80 --restart unless-stopped salary-dashboard:latest"
   },
   "dependencies": {
     "@hookform/resolvers": "^5.2.2",

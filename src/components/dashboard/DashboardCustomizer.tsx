@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { GripVertical, ChevronUp, ChevronDown, Eye, EyeOff, Settings2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
@@ -6,6 +6,7 @@ import {
 } from '@/components/ui/dialog';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
+import { loadClientState, saveClientState } from '@/lib/api';
 
 const LAYOUT_KEY = 'salary-dashboard-layout';
 
@@ -26,50 +27,50 @@ const DEFAULT_BLOCKS: BlockConfig[] = [
   { id: 'analysis-panel', title: '数据分析面板', visible: true },
 ];
 
-function loadLayout(): BlockConfig[] {
-  if (typeof window === 'undefined') return DEFAULT_BLOCKS;
-  try {
-    const raw = localStorage.getItem(LAYOUT_KEY);
-    if (!raw) return DEFAULT_BLOCKS;
-    const stored = JSON.parse(raw) as BlockConfig[];
-    // Merge with defaults to handle new blocks
-    const result = [...DEFAULT_BLOCKS];
-    stored.forEach((s) => {
-      const idx = result.findIndex((d) => d.id === s.id);
-      if (idx !== -1) {
-        result[idx] = { ...result[idx], ...s };
-      }
-    });
-    // Sort by stored order
-    const order = stored.map((s) => s.id);
-    result.sort((a, b) => {
-      const ai = order.indexOf(a.id);
-      const bi = order.indexOf(b.id);
-      if (ai === -1 && bi === -1) return 0;
-      if (ai === -1) return 1;
-      if (bi === -1) return -1;
-      return ai - bi;
-    });
-    return result;
-  } catch {
-    return DEFAULT_BLOCKS;
-  }
-}
+function mergeLayout(stored?: BlockConfig[] | null): BlockConfig[] {
+  if (!stored) return DEFAULT_BLOCKS;
+  const result = [...DEFAULT_BLOCKS];
+  stored.forEach((item) => {
+    const index = result.findIndex((defaultItem) => defaultItem.id === item.id);
+    if (index !== -1) result[index] = { ...result[index], ...item };
+  });
 
-function saveLayout(blocks: BlockConfig[]) {
-  if (typeof window === 'undefined') return;
-  try {
-    localStorage.setItem(LAYOUT_KEY, JSON.stringify(blocks));
-  } catch {
-    // ignore
-  }
+  const order = stored.map((item) => item.id);
+  result.sort((a, b) => {
+    const aIndex = order.indexOf(a.id);
+    const bIndex = order.indexOf(b.id);
+    if (aIndex === -1 && bIndex === -1) return 0;
+    if (aIndex === -1) return 1;
+    if (bIndex === -1) return -1;
+    return aIndex - bIndex;
+  });
+  return result;
 }
 
 export function useDashboardLayout() {
-  const [blocks, setBlocks] = useState<BlockConfig[]>(() => loadLayout());
+  const [blocks, setBlocks] = useState<BlockConfig[]>(DEFAULT_BLOCKS);
+  const hydratedRef = useRef(false);
 
   useEffect(() => {
-    saveLayout(blocks);
+    let cancelled = false;
+
+    loadClientState<BlockConfig[]>(LAYOUT_KEY)
+      .then((serverLayout) => {
+        if (!cancelled) setBlocks(mergeLayout(serverLayout));
+      })
+      .catch((error) => console.error('[DashboardLayout] 加载服务器配置失败:', error))
+      .finally(() => {
+        if (!cancelled) hydratedRef.current = true;
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!hydratedRef.current) return;
+    saveClientState(LAYOUT_KEY, blocks).catch((error) => console.error('[DashboardLayout] 保存服务器配置失败:', error));
   }, [blocks]);
 
   const moveUp = useCallback((id: string) => {

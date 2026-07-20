@@ -34,6 +34,7 @@ import { getFormFields } from '@/types/fieldConfig';
 import { computeFormulaFields } from '@/utils/formulaEngine';
 import type { FieldDef } from '@/types/fieldConfig';
 import { parseCsvText, generateImportId, type ParsedRow } from '@/utils/csvParser';
+import { getCsvHeaderAliases } from '@/utils/fieldStandards';
 
 const dataTypeLabels: Record<DataType, string> = {
   overview: '月度总览',
@@ -241,7 +242,7 @@ export function ImportDialog({ open, onOpenChange, dataType }: ImportDialogProps
     e.target.value = '';
   }, [csvColumns, readFileWithEncoding]);
 
-  const handleImport = useCallback(() => {
+  const handleImport = useCallback(async () => {
     setStep('importing');
 
     const validRows = parseResult?.rows.filter((r) => r.errors.length === 0) ?? [];
@@ -257,31 +258,29 @@ export function ImportDialog({ open, onOpenChange, dataType }: ImportDialogProps
       };
     });
 
-    setTimeout(() => {
-      let successCount = 0;
-      let failedCount = 0;
-      let errorMsg: string | undefined;
+    let successCount = 0;
+    let failedCount = 0;
+    let errorMsg: string | undefined;
 
-      try {
-        batchAddItems(dataType, items as any);
-        successCount = items.length;
-        if (!skipInvalid) {
-          successCount = validRows.length;
-          failedCount = invalidRows.length;
-        }
-      } catch (err) {
-        failedCount = items.length;
-        errorMsg = err instanceof Error ? err.message : String(err);
+    try {
+      await batchAddItems(dataType, items);
+      successCount = items.length;
+      if (!skipInvalid) {
+        successCount = validRows.length;
+        failedCount = invalidRows.length;
       }
+    } catch (err) {
+      failedCount = items.length;
+      errorMsg = err instanceof Error ? err.message : String(err);
+    }
 
-      setImportResult({
-        success: successCount,
-        failed: failedCount,
-        skipped: skipInvalid ? invalidRows.length : 0,
-        errorMsg,
-      });
-      setStep('result');
-    }, 600);
+    setImportResult({
+      success: successCount,
+      failed: failedCount,
+      skipped: skipInvalid ? invalidRows.length : 0,
+      errorMsg,
+    });
+    setStep('result');
   }, [parseResult, skipInvalid, dataType, batchAddItems, allFields]);
 
   const validCount = parseResult?.rows.filter((r) => r.errors.length === 0).length ?? 0;
@@ -772,11 +771,12 @@ function parseWithConfig(
   const missing: ColumnMatchResult['missing'] = [];
   const unknown: string[] = [];
 
-  // 建立 header → column 映射（支持 csvHeader 和 fieldKey 双重映射）
+  // 建立 header → column 映射：规范标签为唯一导出来源，同时兼容旧模板标签。
   const headerMap = new Map<string, typeof csvColumns[0]>();
   for (const c of csvColumns) {
-    headerMap.set(c.csvHeader, c);
-    headerMap.set(c.fieldKey, c);
+    for (const header of getCsvHeaderAliases(c.fieldKey, c.csvHeader)) {
+      headerMap.set(header, c);
+    }
   }
 
   // 建立 csvHeaders 的索引映射
@@ -809,7 +809,7 @@ function parseWithConfig(
   if (missing.length > 0) {
     const missingNames = missing.map((m) => `"${m.csvHeader}"`).join('、');
     structuralErrors.push(
-      `CSV 文件中缺少 ${missing.length} 个必填列：${missingNames}。请确保第一行包含这些列名（列名需与上方「CSV 列说明」中显示的完全一致）。`
+      `CSV 文件中缺少 ${missing.length} 个必填列：${missingNames}。请确保第一行包含这些列名；系统同时兼容历史模板中的旧列名。`
     );
   }
 

@@ -4,70 +4,102 @@ import { success, fail, serverError } from '../utils/response.js';
 import { authenticate } from '../middleware/auth.js';
 import { auditLog } from '../middleware/auditLog.js';
 import { normalizeSalaryData } from '../services/salaryCalculator.js';
-import type { Prisma } from '@prisma/client';
 
 export const dataRouter = Router();
 
-// 所有数据路由需要认证
 dataRouter.use(authenticate);
 
-// =====================================================
-// 数据类型 → Prisma Model 映射表
-// =====================================================
+type PrismaDelegateName =
+  | 'monthlyOverview'
+  | 'department'
+  | 'costComposition'
+  | 'positionLevel'
+  | 'storeRegion'
+  | 'budgetLaborCost'
+  | 'costStructure'
+  | 'hqBusinessLine'
+  | 'hqDept'
+  | 'platform';
 
-const MODEL_MAP: Record<string, { model: Prisma.ModelName; searchFields: string[] }> = {
-  overview:       { model: 'MonthlyOverview', searchFields: ['month'] },
-  department:     { model: 'Department',      searchFields: ['month', 'department'] },
-  composition:    { model: 'CostComposition',  searchFields: ['month', 'department'] },
-  position:       { model: 'PositionLevel',    searchFields: ['month', 'department', 'level'] },
-  store:          { model: 'StoreRegion',      searchFields: ['month', 'region'] },
-  budget:         { model: 'BudgetLaborCost',  searchFields: ['month', 'segment', 'center', 'department', 'businessLine'] },
-  costStructure:  { model: 'CostStructure',    searchFields: ['month', 'segment'] },
-  hqBusinessLine: { model: 'HqBusinessLine',   searchFields: ['month', 'businessLine'] },
-  hqDept:         { model: 'HqDept',           searchFields: ['month', 'department'] },
-  platform:       { model: 'Platform',         searchFields: ['month', 'platform'] },
+const MODEL_MAP: Record<string, { model: PrismaDelegateName; searchFields: string[] }> = {
+  overview:       { model: 'monthlyOverview', searchFields: ['month'] },
+  department:     { model: 'department',      searchFields: ['month', 'department'] },
+  composition:    { model: 'costComposition',  searchFields: ['month', 'department'] },
+  position:       { model: 'positionLevel',    searchFields: ['month', 'department', 'level'] },
+  store:          { model: 'storeRegion',      searchFields: ['month', 'region'] },
+  budget:         { model: 'budgetLaborCost',  searchFields: ['month', 'segment', 'center', 'department', 'businessLine'] },
+  costStructure:  { model: 'costStructure',    searchFields: ['month', 'segment'] },
+  hqBusinessLine: { model: 'hqBusinessLine',   searchFields: ['month', 'businessLine'] },
+  hqDept:         { model: 'hqDept',           searchFields: ['month', 'department'] },
+  platform:       { model: 'platform',         searchFields: ['month', 'platform'] },
 };
 
 function getModel(dataType: string) {
-  const m = MODEL_MAP[dataType];
-  if (!m) throw new Error(`未知数据类型: ${dataType}`);
-  return m;
+  const modelConfig = MODEL_MAP[dataType];
+  if (!modelConfig) throw new Error(`未知数据类型: ${dataType}`);
+  return modelConfig;
 }
 
-/**
- * GET /api/v1/data/:dataType — 列表查询
- */
+function getDelegate(model: PrismaDelegateName) {
+  return prisma[model] as unknown as {
+    findMany: (args?: unknown) => Promise<unknown[]>;
+    findUnique: (args: unknown) => Promise<unknown | null>;
+    count: (args?: unknown) => Promise<number>;
+    create: (args: unknown) => Promise<Record<string, unknown>>;
+    createMany: (args: unknown) => Promise<{ count: number }>;
+    update: (args: unknown) => Promise<Record<string, unknown>>;
+    delete: (args: unknown) => Promise<unknown>;
+    deleteMany: (args?: unknown) => Promise<{ count: number }>;
+  };
+}
+
+function getRouteParam(req: Request, name: string): string {
+  const value = req.params[name];
+  if (typeof value !== 'string') throw new Error(`无效路由参数: ${name}`);
+  return value;
+}
+
+function sanitizeRecord(input: unknown): Record<string, unknown> {
+  const data = { ...(input as Record<string, unknown>) };
+  delete data.id;
+  delete data.createdAt;
+  delete data.updatedAt;
+  return data;
+}
+
+async function normalizeAfterWrite(dataType: string, month?: unknown) {
+  if (typeof month === 'string' && ['overview', 'department', 'position', 'store'].includes(dataType)) {
+    await normalizeSalaryData(dataType, month);
+  }
+}
+
 dataRouter.get('/:dataType', async (req: Request, res: Response) => {
   try {
-    const { model, searchFields } = getModel(req.params.dataType);
+    const { model, searchFields } = getModel(getRouteParam(req, 'dataType'));
     const { month, search, page = '1', pageSize = '50', sortBy = 'month', sortOrder = 'desc' } = req.query;
 
     const pageNum = Math.max(1, parseInt(page as string));
     const size = Math.min(200, Math.max(1, parseInt(pageSize as string)));
-
     const where: Record<string, unknown> = {};
+
     if (month) where.month = month;
-    // 其他过滤条件通过 query 传入
     for (const field of searchFields) {
       if (req.query[field]) where[field] = req.query[field] as string;
     }
 
-    // 模糊搜索
     if (search && typeof search === 'string') {
-      const ors = searchFields.map((f) => ({ [f]: { contains: search, mode: 'insensitive' } }));
-      where.OR = ors;
+      where.OR = searchFields.map((field) => ({ [field]: { contains: search, mode: 'insensitive' } }));
     }
 
+    const delegate = getDelegate(model);
     const [list, total] = await Promise.all([
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      (prisma as any)[model].findMany({
+      delegate.findMany({
         where,
         orderBy: { [sortBy as string]: sortOrder },
         skip: (pageNum - 1) * size,
         take: size,
       }),
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      (prisma as any)[model].count({ where }),
+      delegate.count({ where }),
     ]);
 
     return success(res, {
@@ -82,16 +114,10 @@ dataRouter.get('/:dataType', async (req: Request, res: Response) => {
   }
 });
 
-/**
- * GET /api/v1/data/:dataType/:id — 单条查询
- */
 dataRouter.get('/:dataType/:id', async (req: Request, res: Response) => {
   try {
-    const { model } = getModel(req.params.dataType);
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const record = await (prisma as any)[model].findUnique({
-      where: { id: req.params.id },
-    });
+    const { model } = getModel(getRouteParam(req, 'dataType'));
+    const record = await getDelegate(model).findUnique({ where: { id: getRouteParam(req, 'id') } });
     if (!record) return fail(res, 1004, '记录不存在', 404);
     return success(res, record);
   } catch (error) {
@@ -99,54 +125,36 @@ dataRouter.get('/:dataType/:id', async (req: Request, res: Response) => {
   }
 });
 
-/**
- * POST /api/v1/data/:dataType — 新增
- */
 dataRouter.post('/:dataType', auditLog('create', ''), async (req: Request, res: Response) => {
   try {
-    const { model } = getModel(req.params.dataType);
-    const data = { ...req.body };
-    // 去掉客户端可能传入的 id，让数据库自动生成
-    delete data.id;
-    delete data.createdAt;
-    delete data.updatedAt;
-
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const record = await (prisma as any)[model].create({ data });
-
-    // 如果涉及 overview/department/position/store，触发重算
-    if (['overview', 'department', 'position', 'store'].includes(req.params.dataType)) {
-      await normalizeSalaryData(req.params.dataType as string, data.month);
-    }
-
+    const dataType = getRouteParam(req, 'dataType');
+    const { model } = getModel(dataType);
+    const data = sanitizeRecord(req.body);
+    const record = await getDelegate(model).create({ data });
+    await normalizeAfterWrite(dataType, data.month);
     return success(res, record, '创建成功');
   } catch (error) {
     return serverError(res, error);
   }
 });
 
-/**
- * POST /api/v1/data/:dataType/batch — 批量新增
- */
 dataRouter.post('/:dataType/batch', auditLog('import', ''), async (req: Request, res: Response) => {
   try {
-    const { model } = getModel(req.params.dataType);
+    const dataType = getRouteParam(req, 'dataType');
+    const { model } = getModel(dataType);
     const { items, skipInvalid = true } = req.body;
 
     if (!Array.isArray(items) || items.length === 0) {
       return fail(res, 1001, 'items 必须是非空数组');
     }
 
+    const delegate = getDelegate(model);
     const results = { total: items.length, success: 0, skipped: 0, errors: [] as { index: number; message: string }[] };
 
     for (let i = 0; i < items.length; i++) {
       try {
-        const item = { ...items[i] };
-        delete item.id;
-        delete item.createdAt;
-        delete item.updatedAt;
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        await (prisma as any)[model].create({ data: item });
+        const data = sanitizeRecord(items[i]);
+        await delegate.create({ data });
         results.success++;
       } catch (err) {
         const msg = err instanceof Error ? err.message : '未知错误';
@@ -165,41 +173,36 @@ dataRouter.post('/:dataType/batch', auditLog('import', ''), async (req: Request,
   }
 });
 
-/**
- * PUT /api/v1/data/:dataType/:id — 更新
- */
 dataRouter.put('/:dataType/:id', auditLog('update', ''), async (req: Request, res: Response) => {
   try {
-    const { model } = getModel(req.params.dataType);
-    const data = { ...req.body };
-    delete data.id;
-    delete data.createdAt;
-    delete data.updatedAt;
-
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const record = await (prisma as any)[model].update({
-      where: { id: req.params.id },
+    const dataType = getRouteParam(req, 'dataType');
+    const { model } = getModel(dataType);
+    const data = sanitizeRecord(req.body);
+    const record = await getDelegate(model).update({
+      where: { id: getRouteParam(req, 'id') },
       data,
     });
-
-    if (['overview', 'department', 'position', 'store'].includes(req.params.dataType)) {
-      await normalizeSalaryData(req.params.dataType as string, record.month);
-    }
-
+    await normalizeAfterWrite(dataType, record.month);
     return success(res, record, '更新成功');
   } catch (error) {
     return serverError(res, error);
   }
 });
 
-/**
- * DELETE /api/v1/data/:dataType/:id — 删除
- */
+dataRouter.delete('/:dataType', auditLog('clear', ''), async (req: Request, res: Response) => {
+  try {
+    const { model } = getModel(getRouteParam(req, 'dataType'));
+    const result = await getDelegate(model).deleteMany();
+    return success(res, result, `已清空 ${result.count} 条记录`);
+  } catch (error) {
+    return serverError(res, error);
+  }
+});
+
 dataRouter.delete('/:dataType/:id', auditLog('delete', ''), async (req: Request, res: Response) => {
   try {
-    const { model } = getModel(req.params.dataType);
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    await (prisma as any)[model].delete({ where: { id: req.params.id } });
+    const { model } = getModel(getRouteParam(req, 'dataType'));
+    await getDelegate(model).delete({ where: { id: getRouteParam(req, 'id') } });
     return success(res, null, '删除成功');
   } catch (error) {
     return serverError(res, error);

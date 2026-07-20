@@ -27,48 +27,40 @@
 
 ## 二、一键部署
 
-### 2.1 安装 Docker（如果还没有）
+### 2.1 Ubuntu 服务器一键安装并部署
+
+进入项目目录后只需要运行：
 
 ```bash
-# Ubuntu/Debian
-curl -fsSL https://get.docker.com | sudo sh
-sudo usermod -aG docker $USER
-newgrp docker
-
-# 验证安装
-docker --version
-docker compose version
+bash scripts/ubuntu-docker-deploy.sh
 ```
 
-### 2.2 克隆项目并启动
+脚本会自动完成：
+
+- 检查并安装 Docker
+- 自动创建 `.env`
+- 生成数据库密码、JWT 密钥，并设置初始管理员为 `Mixmind / Mixmind`
+- 构建并启动 PostgreSQL、后端 API、前端 Nginx
+- 首次启动后由后端自动同步 Prisma 数据库表
+
+### 2.2 如果 Docker 已安装，也可以直接启动
 
 ```bash
-# 1. 拉取代码
-git clone https://github.com/ShanHuiSir/salary-system.git
-cd salary-system
-
-# 2. 创建环境变量文件
-cp .env.example .env
-# 编辑 .env，修改密码和密钥（重要！）
-nano .env
-
-# 3. 一键启动（PostgreSQL + 后端 + 前端）
-docker compose up -d
-
-# 4. 查看日志确认启动成功
-docker compose logs -f
-
-# 5. 初始化数据库（首次启动后执行）
-docker compose exec server npx prisma db push
-docker compose exec server npm run db:seed
+./deploy.sh docker
 ```
 
 ### 2.3 访问系统
 
 ```
 http://<服务器IP>
-账号：admin
-密码：admin123（首次登录后请立即修改！）
+账号：Mixmind
+密码：Mixmind
+```
+
+如需导入演示数据，可在启动成功后执行：
+
+```bash
+docker compose exec server npm run db:seed
 ```
 
 ---
@@ -148,8 +140,8 @@ CLIENT_PORT=80
 CORS_ORIGIN=http://your-server-ip-or-domain
 
 # 初始管理员（首次启动自动创建）
-ADMIN_USERNAME=admin
-ADMIN_PASSWORD=change-this-password
+ADMIN_USERNAME=Mixmind
+ADMIN_PASSWORD=Mixmind
 ```
 
 ---
@@ -205,11 +197,10 @@ curl -X POST http://localhost:3000/api/v1/data/overview/batch \
 ## 七、安全加固（生产必做）
 
 ```bash
-# 1. 修改默认管理员密码
+# 1. 验证初始管理员登录
 curl -X POST http://localhost:3000/api/v1/auth/login \
   -H "Content-Type: application/json" \
-  -d '{"username":"admin","password":"admin123"}'
-# 记录返回的 accessToken，然后通过 API 修改密码
+  -d '{"username":"Mixmind","password":"Mixmind"}'
 
 # 2. 配置防火墙
 sudo ufw allow 80/tcp

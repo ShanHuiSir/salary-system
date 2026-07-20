@@ -21,39 +21,43 @@ function ReportPageWrapper() {
 }
 
 function AppContent() {
-  const { isAuthenticated, login, logout } = useAuth();
+  const { isAuthenticated, checking, login, logout } = useAuth();
+
+  if (checking) {
+    return <div className="flex min-h-screen items-center justify-center text-muted-foreground">正在验证登录状态...</div>;
+  }
 
   if (!isAuthenticated) {
     return <LoginPage onLogin={login} />;
   }
 
   return (
-    <AppLayout onLogout={logout}>
-      <ErrorBoundary>
-        <Routes>
-          <Route path="/dashboard" element={<ErrorBoundary><DashboardPage /></ErrorBoundary>} />
-          <Route path="/report/:scope/:type" element={<ErrorBoundary><ReportPageWrapper /></ErrorBoundary>} />
-          <Route path="/data" element={<ErrorBoundary><DataListPage /></ErrorBoundary>} />
-          <Route path="/data/:type/:id" element={<ErrorBoundary><DataFormPage /></ErrorBoundary>} />
-          <Route path="/data-binding" element={<ErrorBoundary><DataBindingPage /></ErrorBoundary>} />
-          <Route path="*" element={<Navigate to="/dashboard" replace />} />
-        </Routes>
-      </ErrorBoundary>
-    </AppLayout>
+    <DataProvider>
+      <FieldConfigProvider>
+        <DataBindingProvider>
+          <AppLayout onLogout={logout}>
+            <ErrorBoundary>
+              <Routes>
+                <Route path="/dashboard" element={<ErrorBoundary><DashboardPage /></ErrorBoundary>} />
+                <Route path="/report/:scope/:type" element={<ErrorBoundary><ReportPageWrapper /></ErrorBoundary>} />
+                <Route path="/data" element={<ErrorBoundary><DataListPage /></ErrorBoundary>} />
+                <Route path="/data/:type/:id" element={<ErrorBoundary><DataFormPage /></ErrorBoundary>} />
+                <Route path="/data-binding" element={<ErrorBoundary><DataBindingPage /></ErrorBoundary>} />
+                <Route path="*" element={<Navigate to="/dashboard" replace />} />
+              </Routes>
+            </ErrorBoundary>
+          </AppLayout>
+        </DataBindingProvider>
+      </FieldConfigProvider>
+    </DataProvider>
   );
 }
 
 function App() {
   return (
     <BrowserRouter>
-      <DataProvider>
-        <FieldConfigProvider>
-          <DataBindingProvider>
-            <Toaster position="top-right" richColors />
-            <AppContent />
-          </DataBindingProvider>
-        </FieldConfigProvider>
-      </DataProvider>
+      <Toaster position="top-right" richColors />
+      <AppContent />
     </BrowserRouter>
   );
 }

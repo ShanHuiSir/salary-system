@@ -418,7 +418,7 @@ export function generateSegmentAnalysis(
 
         const channels = [
           { name: '自营区域', change: selfChange, value: currentOverview.selfOperatedRevenue },
-          { name: '代理区域', change: franchiseChange, value: currentOverview.franchiseRevenue },
+          { name: '加盟', change: franchiseChange, value: currentOverview.franchiseRevenue },
           { name: '线上', change: platformChange, value: currentOverview.platformRevenue },
         ].sort((a, b) => Math.abs(b.change) - Math.abs(a.change));
 

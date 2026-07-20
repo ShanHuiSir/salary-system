@@ -40,7 +40,7 @@ export const defaultFieldConfigs: FieldConfigs = {
     { key: 'month', label: '月份(YYYY-MM)', type: 'string', required: true, visibleInList: true, system: true, order: 1 },
     { key: 'totalRevenue', label: '总业绩(万)', type: 'number', required: true, suffix: '万', visibleInList: true, system: false, order: 2 },
     { key: 'selfOperatedRevenue', label: '自营业绩(万)', type: 'number', required: true, suffix: '万', visibleInList: true, system: false, order: 3 },
-    { key: 'franchiseRevenue', label: '代理业绩(万)', type: 'number', required: true, suffix: '万', visibleInList: true, system: false, order: 4 },
+    { key: 'franchiseRevenue', label: '加盟业绩(万)', type: 'number', required: true, suffix: '万', visibleInList: true, system: false, order: 4 },
     { key: 'platformRevenue', label: '线上业绩(万)', type: 'number', required: true, suffix: '万', visibleInList: true, system: false, order: 5 },
     { key: 'factoryRevenue', label: '犀利产值(万)', type: 'number', required: false, suffix: '万', visibleInList: true, system: false, order: 6 },
     { key: 'totalLaborCost', label: '人力成本(万)', type: 'number', required: true, suffix: '万', visibleInList: true, system: false, order: 7 },

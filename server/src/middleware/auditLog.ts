@@ -18,7 +18,7 @@ export function auditLog(action: string, tableName: string) {
             username: req.user?.username ?? 'system',
             action,
             tableName,
-            recordId: req.params.id ?? null,
+            recordId: typeof req.params.id === 'string' ? req.params.id : null,
             ipAddress: req.ip ?? null,
             userAgent: req.get('user-agent') ?? null,
           },

@@ -159,7 +159,7 @@ function getCumulativeDeptData(
 }
 
 export function DashboardPage() {
-  const { overviews: rawOverviews, departments, compositions, positions, stores, budgets, costStructures, loadedFromStorage } = useData();
+  const { overviews: rawOverviews, departments, compositions, positions, stores, budgets, costStructures, loadedFromStorage, loading, syncError } = useData();
   
   // ===== 数据联动诊断 =====
   useEffect(() => {
@@ -770,10 +770,14 @@ export function DashboardPage() {
           <h2 className="text-2xl font-bold tracking-tight">数据看板</h2>
           <p className="text-sm text-muted-foreground">
             当前维度：{dimension} · {viewMode === 'cumulative' ? cumulativeLabel : `数据月份：${monthLabel}`}
-            {loadedFromStorage ? (
-              <span className="ml-2 text-green-600">● 已联动数据管理</span>
+            {loading ? (
+              <span className="ml-2 text-blue-500">● 正在加载服务器数据</span>
+            ) : syncError ? (
+              <span className="ml-2 text-red-500">● 服务器数据加载失败：{syncError}</span>
+            ) : loadedFromStorage ? (
+              <span className="ml-2 text-green-600">● 使用服务器数据库数据</span>
             ) : (
-              <span className="ml-2 text-amber-500">● 使用默认模拟数据（请在「数据管理」中编辑）</span>
+              <span className="ml-2 text-amber-500">● 暂无服务器数据（请在「数据管理」中导入）</span>
             )}
           </p>
         </div>
@@ -1044,7 +1048,7 @@ export function DashboardPage() {
             </Card>
             <Card>
               <CardHeader className="pb-1">
-                <CardTitle className="text-sm font-medium text-muted-foreground">代理区域业绩</CardTitle>
+                <CardTitle className="text-sm font-medium text-muted-foreground">加盟业绩</CardTitle>
               </CardHeader>
               <CardContent>
                 <div className="text-xl font-bold tracking-tight">{formatWan(activeOverview.franchiseRevenue)}</div>

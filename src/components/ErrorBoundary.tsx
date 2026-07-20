@@ -98,7 +98,7 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
               <div className="rounded-md bg-amber-50 p-3 text-sm text-amber-800 dark:bg-amber-950/30 dark:text-amber-200">
                 <p className="font-medium">数据安全说明</p>
                 <p className="mt-1 text-xs">
-                  您的数据存储在浏览器的 localStorage 中。点击"尝试恢复"通常可重新渲染页面；
+                  业务数据存储在服务器数据库中。点击"尝试恢复"通常可重新渲染页面；
                   如反复出现，请截图上方的错误信息并提供给开发。
                 </p>
               </div>

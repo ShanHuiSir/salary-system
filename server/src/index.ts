@@ -2,6 +2,7 @@ import express from 'express';
 import cors from 'cors';
 import { authRouter } from './routes/auth.js';
 import { dataRouter } from './routes/data.js';
+import { stateRouter } from './routes/state.js';
 import { prisma } from './utils/prisma.js';
 import bcrypt from 'bcryptjs';
 
@@ -25,6 +26,7 @@ app.use((req, _res, next) => {
 // 路由
 app.use('/api/v1/auth', authRouter);
 app.use('/api/v1/data', dataRouter);
+app.use('/api/v1/state', stateRouter);
 
 // 健康检查
 app.get('/api/health', (_req, res) => {
@@ -44,20 +46,34 @@ async function start() {
     await prisma.$connect();
     console.log('✅ 数据库连接成功');
 
-    // 检查是否需要创建默认管理员
-    const adminExists = await prisma.user.findUnique({ where: { username: 'admin' } });
-    if (!adminExists) {
-      const adminPassword = process.env.ADMIN_PASSWORD || 'admin123';
-      const hash = await bcrypt.hash(adminPassword, 12);
+    // 确保默认管理员可用；已有同名账号时同步密码，便于服务器重新部署后立即生效。
+    const adminUsername = process.env.ADMIN_USERNAME || 'Mixmind';
+    const adminPassword = process.env.ADMIN_PASSWORD || 'Mixmind';
+    const hash = await bcrypt.hash(adminPassword, 12);
+    const adminExists = await prisma.user.findUnique({ where: { username: adminUsername } });
+    if (adminExists) {
+      await prisma.user.update({
+        where: { username: adminUsername },
+        data: {
+          passwordHash: hash,
+          displayName: adminExists.displayName || '系统管理员',
+          role: 'super_admin',
+          isActive: true,
+          loginAttempts: 0,
+          lockedUntil: null,
+        },
+      });
+      console.log(`✅ 默认管理员已更新: ${adminUsername}`);
+    } else {
       await prisma.user.create({
         data: {
-          username: process.env.ADMIN_USERNAME || 'admin',
+          username: adminUsername,
           passwordHash: hash,
           displayName: '系统管理员',
           role: 'super_admin',
         },
       });
-      console.log('✅ 默认管理员已创建 (admin / admin123)');
+      console.log(`✅ 默认管理员已创建: ${adminUsername}`);
     }
 
     app.listen(PORT, () => {

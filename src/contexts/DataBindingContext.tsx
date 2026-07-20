@@ -1,7 +1,8 @@
-import { createContext, useContext, useState, useEffect, useCallback, type ReactNode } from 'react';
+import { createContext, useContext, useState, useEffect, useCallback, useRef, type ReactNode } from 'react';
 import type { DataType } from '@/types';
 import type { DataPath, MatchingRule, ConsistencyResult } from '@/types/dataBinding';
 import { defaultDataPaths, defaultMatchingRules } from '@/types/dataBinding';
+import { loadClientState, saveClientState } from '@/lib/api';
 
 const STORAGE_KEY = 'salary-admin-data-binding';
 
@@ -10,33 +11,17 @@ interface PersistedBinding {
   rules: MatchingRule[];
 }
 
-function loadFromStorage(): PersistedBinding {
-  if (typeof window === 'undefined') return { paths: defaultDataPaths, rules: defaultMatchingRules };
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) return { paths: defaultDataPaths, rules: defaultMatchingRules };
-    const parsed = JSON.parse(raw) as Partial<PersistedBinding>;
-    // 合并默认配置，确保新增的默认路径和规则也能出现
-    const existingPathIds = new Set((parsed.paths ?? []).map((p) => p.id));
-    const newDefaultPaths = defaultDataPaths.filter((p) => !existingPathIds.has(p.id));
-    const existingRuleIds = new Set((parsed.rules ?? []).map((r) => r.id));
-    const newDefaultRules = defaultMatchingRules.filter((r) => !existingRuleIds.has(r.id));
-    return {
-      paths: [...(parsed.paths ?? defaultDataPaths), ...newDefaultPaths],
-      rules: [...(parsed.rules ?? defaultMatchingRules), ...newDefaultRules],
-    };
-  } catch {
-    return { paths: defaultDataPaths, rules: defaultMatchingRules };
-  }
-}
-
-function saveToStorage(binding: PersistedBinding) {
-  if (typeof window === 'undefined') return;
-  try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(binding));
-  } catch {
-    // ignore
-  }
+function mergeBinding(binding?: Partial<PersistedBinding> | null): PersistedBinding {
+  const paths = binding?.paths ?? defaultDataPaths;
+  const rules = binding?.rules ?? defaultMatchingRules;
+  const existingPathIds = new Set(paths.map((p) => p.id));
+  const newDefaultPaths = defaultDataPaths.filter((p) => !existingPathIds.has(p.id));
+  const existingRuleIds = new Set(rules.map((r) => r.id));
+  const newDefaultRules = defaultMatchingRules.filter((r) => !existingRuleIds.has(r.id));
+  return {
+    paths: [...paths, ...newDefaultPaths],
+    rules: [...rules, ...newDefaultRules],
+  };
 }
 
 interface DataBindingContextValue {
@@ -67,11 +52,30 @@ interface DataBindingContextValue {
 const DataBindingContext = createContext<DataBindingContextValue | null>(null);
 
 export function DataBindingProvider({ children }: { children: ReactNode }) {
-  const [binding, setBinding] = useState<PersistedBinding>(() => loadFromStorage());
+  const [binding, setBinding] = useState<PersistedBinding>(() => mergeBinding());
   const [consistencyResults, setConsistencyResults] = useState<ConsistencyResult[]>([]);
+  const hydratedRef = useRef(false);
 
   useEffect(() => {
-    saveToStorage(binding);
+    let cancelled = false;
+
+    loadClientState<Partial<PersistedBinding>>(STORAGE_KEY)
+      .then((serverBinding) => {
+        if (!cancelled) setBinding(mergeBinding(serverBinding));
+      })
+      .catch((error) => console.error('[DataBinding] 加载服务器配置失败:', error))
+      .finally(() => {
+        if (!cancelled) hydratedRef.current = true;
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!hydratedRef.current) return;
+    saveClientState(STORAGE_KEY, binding).catch((error) => console.error('[DataBinding] 保存服务器配置失败:', error));
   }, [binding]);
 
   // ===== 路径操作 =====

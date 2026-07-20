@@ -6,7 +6,7 @@
  */
 
 import type { DepartmentData, MonthlyOverview } from '@/types';
-import { safeNum, safeDivide, safePercent } from './numberUtils';
+import { safeNum, safePercent } from './numberUtils';
 
 /**
  * 获取累计月度总览：从年初到指定月份的各项指标累计
@@ -99,9 +99,8 @@ export function getCumulativeDeptData(
     avgSalary: safeNum(latestInPeriod.avgSalary),
     perCapitaRevenue: safeNum(latestInPeriod.perCapitaRevenue),
     storeEfficiency: safeNum(latestInPeriod.storeEfficiency),
-    laborCostRatio: cumLaborCost > 0
-      ? (cumLaborCost / safeNum(latestInPeriod.totalLaborCost || 1)) * safeNum(latestInPeriod.laborCostRatio)
-      : 0,
+    // 部门累计数据没有收入分母，沿用期末月的成本占比快照，避免伪造累计比率。
+    laborCostRatio: safeNum(latestInPeriod.laborCostRatio),
     momLaborCost: safeNum(latestInPeriod.momLaborCost),
     yoyLaborCost: safeNum(latestInPeriod.yoyLaborCost),
     momHeadcount: safeNum(latestInPeriod.momHeadcount),

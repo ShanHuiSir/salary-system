@@ -8,29 +8,25 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { toast } from 'sonner';
 
 interface LoginPageProps {
-  onLogin: (username: string, password: string) => boolean;
+  onLogin: (username: string, password: string) => Promise<boolean>;
 }
 
 export function LoginPage({ onLogin }: LoginPageProps) {
-  const [username, setUsername] = useState('admin');
+  const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
-    setTimeout(() => {
-      const success = onLogin(username, password);
-      if (success) {
-        navigate('/dashboard', { replace: true });
-      } else {
-        toast.error('登录失败', {
-          description: '用户名或密码错误，请使用 admin / admin 登录',
-        });
-      }
+    try {
+      const success = await onLogin(username, password);
+      if (success) navigate('/dashboard', { replace: true });
+      else toast.error('登录失败', { description: '用户名或密码错误' });
+    } finally {
       setLoading(false);
-    }, 500);
+    }
   };
 
   return (
@@ -51,7 +47,7 @@ export function LoginPage({ onLogin }: LoginPageProps) {
                   value={username}
                   onChange={(e) => setUsername(e.target.value)}
                   className="pl-9"
-                  placeholder="admin"
+                  placeholder="请输入用户名"
                   required
                 />
               </div>
@@ -66,11 +62,10 @@ export function LoginPage({ onLogin }: LoginPageProps) {
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   className="pl-9"
-                  placeholder="admin"
+                  placeholder="请输入密码"
                   required
                 />
               </div>
-              <p className="text-xs text-muted-foreground">默认账号：admin / admin</p>
             </div>
             <Button type="submit" className="w-full" disabled={loading}>
               {loading ? '登录中...' : '登录'}

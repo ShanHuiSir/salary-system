@@ -13,12 +13,12 @@ async function main() {
   console.log('🌱 开始导入初始数据...');
 
   // 1. 创建管理员
-  const hash = await bcrypt.hash('admin123', 12);
+  const hash = await bcrypt.hash('Mixmind', 12);
   await prisma.user.upsert({
-    where: { username: 'admin' },
-    update: {},
+    where: { username: 'Mixmind' },
+    update: { passwordHash: hash, role: 'super_admin', isActive: true, loginAttempts: 0, lockedUntil: null },
     create: {
-      username: 'admin',
+      username: 'Mixmind',
       passwordHash: hash,
       displayName: '系统管理员',
       role: 'super_admin',

@@ -1,39 +1,23 @@
-import { createContext, useContext, useState, useEffect, useCallback, type ReactNode } from 'react';
+import { createContext, useContext, useState, useEffect, useCallback, useRef, type ReactNode } from 'react';
 import type { DataType } from '@/types';
 import type { FieldDef, FieldConfigs } from '@/types/fieldConfig';
 import { defaultFieldConfigs } from '@/types/fieldConfig';
+import { getCanonicalFieldLabel } from '@/utils/fieldStandards';
+import { loadClientState, saveClientState } from '@/lib/api';
 
 const STORAGE_KEY = 'salary-admin-field-configs';
 
-function loadFromStorage(): FieldConfigs {
-  if (typeof window === 'undefined') return defaultFieldConfigs;
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) return defaultFieldConfigs;
-    const parsed = JSON.parse(raw) as FieldConfigs;
-    // 合并默认配置，确保新增的默认字段也能出现
-    const merged: FieldConfigs = { ...defaultFieldConfigs };
-    for (const dt of Object.keys(parsed) as DataType[]) {
-      // 用户可能新增了自定义字段，也可能删除了某些非系统字段
-      // 以用户配置为主，但确保系统字段始终存在
-      const userFields = parsed[dt] ?? [];
-      const systemFieldsFromDefault = defaultFieldConfigs[dt].filter((f) => f.system);
-      const userNonSystemFields = userFields.filter((f) => !f.system);
-      merged[dt] = [...systemFieldsFromDefault, ...userNonSystemFields];
-    }
-    return merged;
-  } catch {
-    return defaultFieldConfigs;
+function mergeFieldConfigs(configs: Partial<FieldConfigs>): FieldConfigs {
+  const merged: FieldConfigs = { ...defaultFieldConfigs };
+  for (const dt of Object.keys(defaultFieldConfigs) as DataType[]) {
+    const userFields = configs[dt] ?? [];
+    const systemFieldsFromDefault = defaultFieldConfigs[dt].filter((f) => f.system);
+    const userNonSystemFields = userFields
+      .filter((f) => !f.system)
+      .map((field) => ({ ...field, label: getCanonicalFieldLabel(field.key, field.label) }));
+    merged[dt] = [...systemFieldsFromDefault, ...userNonSystemFields];
   }
-}
-
-function saveToStorage(configs: FieldConfigs) {
-  if (typeof window === 'undefined') return;
-  try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(configs));
-  } catch {
-    // storage full — silently ignore
-  }
+  return merged;
 }
 
 interface FieldConfigContextValue {
@@ -49,10 +33,29 @@ interface FieldConfigContextValue {
 const FieldConfigContext = createContext<FieldConfigContextValue | null>(null);
 
 export function FieldConfigProvider({ children }: { children: ReactNode }) {
-  const [configs, setConfigs] = useState<FieldConfigs>(() => loadFromStorage());
+  const [configs, setConfigs] = useState<FieldConfigs>(() => mergeFieldConfigs(defaultFieldConfigs));
+  const hydratedRef = useRef(false);
 
   useEffect(() => {
-    saveToStorage(configs);
+    let cancelled = false;
+
+    loadClientState<Partial<FieldConfigs>>(STORAGE_KEY)
+      .then((serverConfigs) => {
+        if (!cancelled && serverConfigs) setConfigs(mergeFieldConfigs(serverConfigs));
+      })
+      .catch((error) => console.error('[FieldConfig] 加载服务器配置失败:', error))
+      .finally(() => {
+        if (!cancelled) hydratedRef.current = true;
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!hydratedRef.current) return;
+    saveClientState(STORAGE_KEY, configs).catch((error) => console.error('[FieldConfig] 保存服务器配置失败:', error));
   }, [configs]);
 
   const getFields = useCallback(

@@ -1,28 +1,55 @@
 import { useState, useEffect, useCallback } from 'react';
-
-const AUTH_KEY = 'salary-admin-auth';
+import {
+  clearAuthSession,
+  getAuthSession,
+  getCurrentUser,
+  loginWithPassword,
+  logoutFromServer,
+  type AuthUser,
+} from '@/lib/api';
 
 export function useAuth() {
-  const [isAuthenticated, setIsAuthenticated] = useState<boolean>(() => {
-    if (typeof window === 'undefined') return false;
-    return localStorage.getItem(AUTH_KEY) === 'true';
-  });
+  const [user, setUser] = useState<AuthUser | null>(() => getAuthSession()?.user ?? null);
+  const [checking, setChecking] = useState(() => Boolean(getAuthSession()?.accessToken));
 
   useEffect(() => {
-    localStorage.setItem(AUTH_KEY, String(isAuthenticated));
-  }, [isAuthenticated]);
+    let cancelled = false;
+    const session = getAuthSession();
 
-  const login = useCallback((username: string, password: string): boolean => {
-    if (username === 'admin' && password === 'admin') {
-      setIsAuthenticated(true);
+    if (!session?.accessToken) return;
+
+    getCurrentUser()
+      .then((currentUser) => {
+        if (!cancelled) setUser(currentUser);
+      })
+      .catch(() => {
+        clearAuthSession();
+        if (!cancelled) setUser(null);
+      })
+      .finally(() => {
+        if (!cancelled) setChecking(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const login = useCallback(async (username: string, password: string): Promise<boolean> => {
+    try {
+      const loggedInUser = await loginWithPassword(username, password);
+      setUser(loggedInUser);
       return true;
+    } catch {
+      setUser(null);
+      return false;
     }
-    return false;
   }, []);
 
-  const logout = useCallback(() => {
-    setIsAuthenticated(false);
+  const logout = useCallback(async () => {
+    await logoutFromServer();
+    setUser(null);
   }, []);
 
-  return { isAuthenticated, login, logout };
+  return { isAuthenticated: Boolean(user), checking, user, login, logout };
 }

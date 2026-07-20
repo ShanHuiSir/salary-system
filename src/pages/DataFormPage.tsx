@@ -135,7 +135,7 @@ export function DataFormPage() {
     }
   }, [existing, form]);
 
-  const onSubmit = (values: Record<string, unknown>) => {
+  const onSubmit = async (values: Record<string, unknown>) => {
     const preparedValues = prepareSalaryFormValues(type, values);
 
     // 校验所有可编辑字段；系统固定公式字段保存时统一重算，不允许手工值影响结果
@@ -168,15 +168,23 @@ export function DataFormPage() {
     const computedFormulaValues = computeFormulaFields(convertedValues, allFields);
     const finalValues = { ...convertedValues, ...computedFormulaValues };
 
-    if (isNew) {
-      const newId = generateId(type, finalValues);
-      addItem(type, { ...finalValues, id: newId });
-      toast({ title: '新增成功' });
-    } else {
-      updateItem(type, id!, { ...finalValues, id });
-      toast({ title: '更新成功' });
+    try {
+      if (isNew) {
+        const newId = generateId(type, finalValues);
+        await addItem(type, { ...finalValues, id: newId });
+        toast({ title: '新增成功' });
+      } else {
+        await updateItem(type, id!, { ...finalValues, id });
+        toast({ title: '更新成功' });
+      }
+      navigate('/data');
+    } catch (error) {
+      toast({
+        title: '保存失败',
+        description: error instanceof Error ? error.message : '服务器数据写入失败',
+        variant: 'destructive',
+      });
     }
-    navigate('/data');
   };
 
   const { register, formState } = form;

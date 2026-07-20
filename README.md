@@ -76,12 +76,12 @@ docker compose exec server npm run db:seed
 
 # 5. 访问
 # http://localhost   （或 http://<服务器IP>）
-# 账号: admin / 密码: admin123
+# 账号: Mixmind / 密码: Mixmind
 ```
 
 详细部署文档：[docs/deploy-guide.md](docs/deploy-guide.md)
 
-### 方式二: 仅前端部署（无后端，数据存 localStorage）
+### 方式二: 仅前端部署（无后端，不推荐生产使用）
 
 ### 方式一: 静态文件部署（推荐）
 
@@ -228,7 +228,7 @@ salary-system/
     ├── data/
     │   └── mockData.ts             # 初始模拟数据
     ├── hooks/
-    │   ├── useAuth.ts             # 认证 (前端 mock)
+    │   ├── useAuth.ts             # 后端认证
     │   ├── use-mobile.ts          # 移动端检测
     │   └── use-toast.ts           # Toast 通知
     ├── lib/
@@ -258,7 +258,7 @@ salary-system/
 - 自动分析洞察面板
 
 ### 数据管理
-- 6 种数据类型：月度总览、部门数据、成本构成、层级数据、区域人效、预算人力成本
+- 7 种数据类型：月度总览、部门数据、成本构成、层级数据、区域人效、预算人力成本、人力成本组成
 - 列表管理 + 表单编辑
 - 批量导入（CSV 上传，支持 UTF-8/GBK 编码）
 - 字段自定义配置（增删改排序）
@@ -275,16 +275,16 @@ salary-system/
 ### 数据联动
 - 看板 KPI 从部门数据实时派生
 - 数据管理编辑后看板自动更新
-- localStorage 持久化，刷新不丢失
+- 生产环境推荐使用 Docker Compose 完整部署，业务数据保存到服务器 PostgreSQL 数据库
 
 ## 默认账号
 
 ```
-用户名: admin
-密码:   admin
+用户名: Mixmind
+密码:   Mixmind
 ```
 
-> 注意：当前版本使用前端 mock 认证，生产环境请对接后端认证服务。
+> 当前版本使用后端认证服务，默认管理员会在后端启动时自动确保可用。
 
 ## 常用命令
 

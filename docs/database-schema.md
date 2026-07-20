@@ -39,7 +39,7 @@ CREATE TABLE monthly_overviews (
   month             VARCHAR(7) NOT NULL,           -- YYYY-MM
   total_revenue     DECIMAL(12,2) NOT NULL DEFAULT 0,  -- 总业绩(万)
   self_operated_revenue DECIMAL(12,2) NOT NULL DEFAULT 0,  -- 自营业绩(万)
-  franchise_revenue DECIMAL(12,2) NOT NULL DEFAULT 0,  -- 代理业绩(万)
+  franchise_revenue DECIMAL(12,2) NOT NULL DEFAULT 0,  -- 加盟业绩(万)
   platform_revenue  DECIMAL(12,2) NOT NULL DEFAULT 0,  -- 线上业绩(万)
   factory_revenue   DECIMAL(12,2) DEFAULT 0,      -- 犀利产值(万)
   total_labor_cost  DECIMAL(12,2) NOT NULL DEFAULT 0,  -- 总人力成本(万)

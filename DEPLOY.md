@@ -14,6 +14,52 @@
 
 ## 二、三种部署方式
 
+### 生产内网部署必做
+
+薪资系统只用于公司内网时，建议先完成以下配置再开放给业务用户：
+
+1. 创建并检查 `.env`，不要使用 `.env.example` 中的示例密码。
+2. 将 `CLIENT_BIND` 设置为服务器内网 IP，例如 `CLIENT_BIND=192.168.1.10`。
+3. 将 `CORS_ORIGIN` 设置为实际访问地址，例如 `http://192.168.1.10` 或公司内网域名。
+4. 确认 `ADMIN_USERNAME=Mixmind`、`ADMIN_PASSWORD=Mixmind` 已写入 `.env`。
+5. 使用防火墙只允许公司内网网段访问 Web 端口。
+6. 配置数据库自动备份，并定期测试恢复。
+
+常用检查命令：
+
+```bash
+sudo docker-compose ps
+sudo ss -lntup
+sudo systemctl is-enabled docker
+```
+
+本机代码同步到公司服务器：
+
+```bash
+./sync-to-server.sh
+```
+
+默认同步到 `ouni777@192.168.0.235:/opt/salary-system`，并自动重新构建启动服务。
+
+数据库手动备份：
+
+```bash
+bash scripts/backup-postgres.sh
+```
+
+每天凌晨 2 点自动备份示例：
+
+```bash
+mkdir -p /opt/salary-system/logs
+crontab -e
+```
+
+加入：
+
+```cron
+0 2 * * * cd /opt/salary-system && bash scripts/backup-postgres.sh >> logs/backup.log 2>&1
+```
+
 ### 方式 A：静态文件部署（最简单）
 
 适合：Nginx / Apache / 云存储 / CDN
@@ -53,38 +99,39 @@ server {
 
 ---
 
-### 方式 B：Docker 部署（推荐生产环境）
+### 方式 B：Docker Compose 完整部署（推荐生产环境）
 
-适合：容器化环境、K8s 集群
+适合：需要后端 API、PostgreSQL 数据库和前端一起部署的服务器。
 
 ```bash
-# 构建镜像
-docker build -t salary-dashboard:1.0.0 .
-
-# 运行容器
-docker run -d \
-    --name salary-dashboard \
-    -p 80:80 \
-    --restart unless-stopped \
-    salary-dashboard:1.0.0
+# 一键构建并启动：PostgreSQL + 后端 API + 前端 Nginx
+./deploy.sh docker
 ```
 
 **验证：**
 ```bash
-# 检查容器状态
-docker ps | grep salary-dashboard
+# 检查服务状态
+docker compose ps
 
 # 查看日志
-docker logs -f salary-dashboard
+docker compose logs -f
 
 # 健康检查
 curl http://localhost/ | head -5
+curl http://localhost/api/health
 ```
 
 **停止/删除：**
 ```bash
-docker stop salary-dashboard
-docker rm salary-dashboard
+docker compose down
+```
+
+首次运行时 `deploy.sh` 会自动创建 `.env`，生成数据库密码和 JWT 密钥，并设置初始管理员为 `Mixmind / Mixmind`。
+
+如果只想跑当前前端静态页面，不启动数据库和后端 API，可用：
+
+```bash
+./deploy.sh frontend-docker
 ```
 
 ---
@@ -100,6 +147,9 @@ chmod +x deploy.sh
 
 # Docker 部署
 ./deploy.sh docker
+
+# Ubuntu 服务器上一键安装 Docker 并部署
+bash scripts/ubuntu-docker-deploy.sh
 
 # Docker 构建并推送（需设置 DOCKER_REGISTRY 环境变量）
 DOCKER_REGISTRY=registry.example.com/ ./deploy.sh docker-push
@@ -143,9 +193,8 @@ npm install
 npm run build
 # 将 dist/ 复制到 nginx 目录
 
-# 方式 B：Docker 部署
-docker build -t salary-dashboard:1.0.0 .
-docker run -d --name salary-dashboard -p 80:80 --restart unless-stopped salary-dashboard:1.0.0
+# 方式 B：Docker Compose 完整部署
+bash scripts/ubuntu-docker-deploy.sh
 ```
 
 ---
@@ -304,12 +353,9 @@ VITE_BASE_PATH=/your-sub-path/
 RUN npm config set registry https://registry.npmmirror.com && npm ci
 ```
 
-### Q4: 默认登录账号？
+### Q4: 初始管理员账号？
 
-```
-用户名: admin
-密码:   admin
-```
+Docker Compose 生产部署使用 `.env` 中的 `ADMIN_USERNAME` 和 `ADMIN_PASSWORD`，当前设置为 `Mixmind / Mixmind`。后端启动时会自动确保该管理员账号可用，并同步密码。
 
 ### Q5: 数据存储在哪里？
 

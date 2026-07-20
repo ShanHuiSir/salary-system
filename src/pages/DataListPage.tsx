@@ -83,6 +83,9 @@ export function DataListPage() {
     compositions,
     positions,
     stores,
+    hqBusinessLines,
+    hqDepts,
+    platforms,
     budgets,
     costStructures,
     deleteItem,
@@ -141,11 +144,19 @@ export function DataListPage() {
     );
   }, [dataWithFormulas, search]);
 
-  const handleDelete = () => {
+  const handleDelete = async () => {
     if (deleteId) {
-      deleteItem(activeType, deleteId);
-      toast({ title: '删除成功' });
-      setDeleteId(null);
+      try {
+        await deleteItem(activeType, deleteId);
+        toast({ title: '删除成功' });
+        setDeleteId(null);
+      } catch (error) {
+        toast({
+          title: '删除失败',
+          description: error instanceof Error ? error.message : '服务器数据删除失败',
+          variant: 'destructive',
+        });
+      }
     }
   };
 
@@ -157,23 +168,40 @@ export function DataListPage() {
   // 计算当前所有源数据总条数
   const totalSourceRecords = useMemo(() => {
     return overviews.length + departments.length + compositions.length +
-      positions.length + stores.length + budgets.length + costStructures.length;
-  }, [overviews, departments, compositions, positions, stores, budgets, costStructures]);
+      positions.length + stores.length + budgets.length + costStructures.length +
+      hqBusinessLines.length + hqDepts.length + platforms.length;
+  }, [overviews, departments, compositions, positions, stores, budgets, costStructures, hqBusinessLines, hqDepts, platforms]);
 
-  const handleReset = () => {
-    resetData();
-    toast({ title: '数据已恢复初始状态' });
-    setResetOpen(false);
+  const handleReset = async () => {
+    try {
+      await resetData();
+      toast({ title: '数据已恢复初始状态' });
+      setResetOpen(false);
+    } catch (error) {
+      toast({
+        title: '恢复失败',
+        description: error instanceof Error ? error.message : '服务器数据重置失败',
+        variant: 'destructive',
+      });
+    }
   };
 
-  const handleClearSourceData = () => {
-    const result = clearSourceData();
-    toast({
-      title: '源数据已清空',
-      description: `共清空 ${result.clearedCount} 条记录，涉及 ${result.clearedTypes.length} 类数据。字段配置和系统设置不受影响。`,
-    });
-    setClearOpen(false);
-    setClearConfirmText('');
+  const handleClearSourceData = async () => {
+    try {
+      const result = await clearSourceData();
+      toast({
+        title: '源数据已清空',
+        description: `共清空 ${result.clearedCount} 条记录，涉及 ${result.clearedTypes.length} 类数据。字段配置和系统设置不受影响。`,
+      });
+      setClearOpen(false);
+      setClearConfirmText('');
+    } catch (error) {
+      toast({
+        title: '清空失败',
+        description: error instanceof Error ? error.message : '服务器数据清空失败',
+        variant: 'destructive',
+      });
+    }
   };
 
   const actions = (id: string) => (
@@ -319,7 +347,7 @@ export function DataListPage() {
                       <span>当前源数据共 <strong>{totalSourceRecords}</strong> 条记录</span>
                     </div>
                     <div className="text-xs text-muted-foreground pl-5">
-                      月度总览、部门数据、成本构成、职级数据、门店/区域数据、预算人力成本、人力成本组成
+                      月度总览、部门数据、成本构成、职级数据、门店/区域数据、预算人力成本、人力成本组成、总部业务线、总部部门、平台数据
                     </div>
                   </div>
                   <div className="rounded-md border border-green-500/20 bg-green-500/5 p-3 space-y-1">

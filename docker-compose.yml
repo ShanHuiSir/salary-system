@@ -18,7 +18,7 @@ services:
     environment:
       POSTGRES_DB: salary_db
       POSTGRES_USER: ${DB_USER:-salary_admin}
-      POSTGRES_PASSWORD: ${DB_PASSWORD:-change-me-in-production}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?请先在 .env 中设置 DB_PASSWORD}
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
@@ -35,19 +35,24 @@ services:
     container_name: salary-server
     restart: unless-stopped
     environment:
-      DATABASE_URL: "postgresql://${DB_USER:-salary_admin}:${DB_PASSWORD:-change-me-in-production}@postgres:5432/salary_db"
-      JWT_SECRET: ${JWT_SECRET:-change-me-to-a-random-secret}
-      JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET:-change-me-to-another-random}
+      DATABASE_URL: "postgresql://${DB_USER:-salary_admin}:${DB_PASSWORD:?请先在 .env 中设置 DB_PASSWORD}@postgres:5432/salary_db"
+      JWT_SECRET: ${JWT_SECRET:?请先在 .env 中设置 JWT_SECRET}
+      JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET:?请先在 .env 中设置 JWT_REFRESH_SECRET}
       JWT_EXPIRES_IN: "2h"
       JWT_REFRESH_EXPIRES_IN: "7d"
       PORT: "3000"
       NODE_ENV: production
       CORS_ORIGIN: ${CORS_ORIGIN:-http://localhost}
-      ADMIN_USERNAME: ${ADMIN_USERNAME:-admin}
-      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-admin123}
+      ADMIN_USERNAME: ${ADMIN_USERNAME:-Mixmind}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:?请先在 .env 中设置 ADMIN_PASSWORD}
     depends_on:
       postgres:
         condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:3000/api/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
 
   # ===== 前端 (Nginx 静态服务) =====
   client:
@@ -57,9 +62,11 @@ services:
     container_name: salary-client
     restart: unless-stopped
     ports:
-      - "${CLIENT_PORT:-80}:80"
+      # 内网部署建议在 .env 中设置 CLIENT_BIND 为服务器内网 IP，例如 192.168.1.10
+      - "${CLIENT_BIND:-0.0.0.0}:${CLIENT_PORT:-80}:80"
     depends_on:
-      - server
+      server:
+        condition: service_healthy
 
 volumes:
   pgdata:
