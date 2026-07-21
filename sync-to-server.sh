@@ -2,6 +2,10 @@
 # 安全同步本机代码到服务器并重新构建启动。
 # 用法：./sync-to-server.sh <user@server> [远程项目目录]
 # 也可通过 SERVER、REMOTE_DIR 环境变量传入。
+#
+# 减少密码输入次数：
+#   1. 推荐先执行 bash scripts/setup-ssh-key.sh <user@server> 配置免密登录（一劳永逸）
+#   2. 脚本已启用 SSH 连接复用（ControlMaster），未配密钥时只需输入一次密码
 
 set -euo pipefail
 
@@ -10,6 +14,9 @@ REMOTE_DIR="${2:-${REMOTE_DIR:-/opt/salary-system}}"
 
 if [[ -z "$SERVER" ]]; then
   echo "用法：$0 <user@server> [远程项目目录]" >&2
+  echo "示例：$0 ouni777@192.168.0.235" >&2
+  echo ""
+  echo "💡 首次使用建议先配免密登录：bash scripts/setup-ssh-key.sh <user@server>" >&2
   exit 64
 fi
 if [[ ! "$SERVER" =~ ^[a-zA-Z0-9._-]+@[a-zA-Z0-9.-]+$ ]]; then
@@ -23,11 +30,42 @@ fi
 
 SERVER_HOST="${SERVER#*@}"
 TMP_DIR="/tmp/salary-system-sync-$(date +%Y%m%d%H%M%S)"
-cleanup_remote() { ssh "$SERVER" "rm -rf '$TMP_DIR'" >/dev/null 2>&1 || true; }
-trap cleanup_remote EXIT
 
-printf '[1/5] 同步到临时目录：%s:%s\n' "$SERVER" "$TMP_DIR"
-rsync -az --delete \
+# ===== SSH 连接复用 =====
+# 所有 ssh/rsync 共享一条 TCP 连接，未配密钥时只需输一次密码
+SSH_CONTROL_DIR="/tmp/ssh-control-$$"
+mkdir -p "$SSH_CONTROL_DIR"
+chmod 700 "$SSH_CONTROL_DIR"
+SSH_CTL="${SSH_CONTROL_DIR}/ctl-%r@%h:%p"
+
+SSH_OPTS=(
+  -o ControlMaster=auto
+  -o ControlPath="$SSH_CTL"
+  -o ControlPersist=600
+  -o ServerAliveInterval=60
+)
+
+cleanup_all() {
+  # 关闭主连接
+  ssh -o ControlPath="$SSH_CTL" -O exit "$SERVER" >/dev/null 2>&1 || true
+  # 清理远程临时目录
+  ssh "${SSH_OPTS[@]}" "$SERVER" "rm -rf '$TMP_DIR'" >/dev/null 2>&1 || true
+  rm -rf "$SSH_CONTROL_DIR"
+}
+trap cleanup_all EXIT
+
+# 先打开主连接（未配 SSH 密钥时在此处输入唯一一次密码）
+echo "🔗 建立 SSH 主连接（连接复用模式下只需这一次认证）..."
+ssh "${SSH_OPTS[@]}" -fN "$SERVER" 2>&1
+echo ""
+
+# rsync 也使用相同复用连接
+RSYNC_OPTS=(-az --delete -e "ssh ${SSH_OPTS[*]}")
+
+# ===== 执行同步 =====
+
+printf '[1/5] 同步代码到服务器临时目录：%s:%s\n' "$SERVER" "$TMP_DIR"
+rsync "${RSYNC_OPTS[@]}" \
   --exclude='.git/' \
   --exclude='node_modules/' \
   --exclude='server/node_modules/' \
@@ -39,7 +77,7 @@ rsync -az --delete \
   ./ "$SERVER:$TMP_DIR/"
 
 printf '[2/5] 备份数据库并发布到：%s\n' "$REMOTE_DIR"
-ssh "$SERVER" bash -s -- "$REMOTE_DIR" "$TMP_DIR" <<'REMOTE'
+ssh "${SSH_OPTS[@]}" "$SERVER" bash -s -- "$REMOTE_DIR" "$TMP_DIR" <<'REMOTE'
 set -euo pipefail
 remote_dir="$1"
 tmp_dir="$2"
@@ -56,7 +94,7 @@ sudo chown -R "$USER:" "$remote_dir"
 REMOTE
 
 printf '[3/5] 校验并补齐服务器环境配置\n'
-ssh "$SERVER" bash -s -- "$REMOTE_DIR" "$SERVER_HOST" <<'REMOTE'
+ssh "${SSH_OPTS[@]}" "$SERVER" bash -s -- "$REMOTE_DIR" "$SERVER_HOST" <<'REMOTE'
 set -euo pipefail
 remote_dir="$1"
 server_host="$2"
@@ -66,7 +104,6 @@ if [ ! -f .env ]; then
   cp .env.example .env
 fi
 
-# 仅用 awk 更新已知键，避免 sed 分隔符/特殊字符导致的注入或语法问题。
 update_env() {
   local key="$1" value="$2" tmp
   tmp="$(mktemp)"
@@ -100,7 +137,7 @@ require_secret ADMIN_PASSWORD
 REMOTE
 
 printf '[4/5] 重新构建并启动 Docker 服务（保留数据库卷）\n'
-ssh "$SERVER" bash -s -- "$REMOTE_DIR" <<'REMOTE'
+ssh "${SSH_OPTS[@]}" "$SERVER" bash -s -- "$REMOTE_DIR" <<'REMOTE'
 set -euo pipefail
 cd "$1"
 if sudo docker compose version >/dev/null 2>&1; then
@@ -113,8 +150,10 @@ fi
 REMOTE
 
 printf '[5/5] 验证服务健康状态\n'
-ssh "$SERVER" "sudo docker exec salary-server node -e \"fetch('http://localhost:3000/api/health').then(r => r.ok ? r.text() : Promise.reject(new Error('HTTP ' + r.status))).then(body => console.log('✅ 后端健康检查通过：' + body)).catch(error => { console.error('❌ 后端健康检查失败：' + error.message); process.exit(1); })\""
+ssh "${SSH_OPTS[@]}" "$SERVER" \
+  "sudo docker exec salary-server node -e \"fetch('http://localhost:3000/api/health').then(r => r.ok ? r.text() : Promise.reject(new Error('HTTP ' + r.status))).then(body => console.log('✅ 后端健康检查通过：' + body)).catch(error => { console.error('❌ 后端健康检查失败：' + error.message); process.exit(1); })\""
 
 trap - EXIT
-cleanup_remote
-printf '完成。请访问：http://%s\n' "$SERVER_HOST"
+cleanup_all
+echo ""
+printf '✅ 部署完成！请访问：http://%s\n' "$SERVER_HOST"
