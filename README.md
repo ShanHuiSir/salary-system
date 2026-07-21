@@ -315,6 +315,7 @@ salary-system/
 
 | 文档 | 说明 |
 |------|------|
+| [docs/optimization-plan.md](docs/optimization-plan.md) | **🔍 全面优化计划** — P0/P1/P2 三级优化清单，涵盖安全性、性能、代码质量、可维护性共 36 项具体行动 |
 | [docs/deploy-guide.md](docs/deploy-guide.md) | **公司服务器部署指南** — 一键 Docker 部署、手动部署步骤、运维命令、故障排查 |
 | [docs/api-design.md](docs/api-design.md) | **后端 API 完整设计** — 35 个 REST 接口定义，含认证、CRUD、报表、导入导出、审计日志 |
 | [docs/database-schema.md](docs/database-schema.md) | **数据库表结构** — 10 张业务表 + 6 张系统表的完整 DDL，含索引、视图、触发器 |
@@ -322,7 +323,16 @@ salary-system/
 | [KNOWN_ISSUES.md](KNOWN_ISSUES.md) | 已知问题列表与规避方案 |
 | [DEPLOY.md](DEPLOY.md) | 前端静态部署指南（Nginx / Docker） |
 
-## 最近更新 (2026-07-15)
+## 最近更新 (2026-07-21)
+
+### v1.2 全面代码审查
+- 完成对 118 个文件的逐文件审查（前端 + 后端 + 脚本 + 文档）
+- 输出 [全面优化计划](docs/optimization-plan.md) — P0 8 项必须修复 + P1 10 项建议修复 + P2 18 项后续迭代
+- 涵盖：代码质量、架构设计、性能优化、安全性、可维护性、可扩展性六大维度
+
+### 账号权限系统
+- 六角色 RBAC 权限模型（super_admin / hr_admin / hr_staff / finance / dept_manager / auditor）
+- 前端账号管理页面、后端用户管理 API、权限中间件
 
 ### 后端搭建（新增 `server/` 目录）
 - Express + TypeScript + Prisma + PostgreSQL 后端服务
