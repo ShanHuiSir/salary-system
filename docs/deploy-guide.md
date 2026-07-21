@@ -1,227 +1,141 @@
 # 公司服务器部署指南
 
-> 适用环境：裸机 Linux (Ubuntu/CentOS/Debian) | 更新时间：2026-07-15
-
----
+> 本指南面向内网/生产环境。系统依赖 PostgreSQL 和后端 API；不要将前端静态文件作为独立生产系统部署。
 
 ## 一、前期准备
 
 ### 1.1 服务器最低配置
 
-| 资源 | 要求 |
+| 项目 | 建议 |
 |------|------|
-| CPU | 2 核 |
-| 内存 | 4 GB |
-| 磁盘 | 20 GB 可用 |
-| 系统 | Ubuntu 22.04+ / CentOS 8+ / Debian 12+ |
-| 网络 | 开放端口 80 (HTTP) 和 443 (HTTPS，可选) |
+| CPU | 2 核或以上 |
+| 内存 | 2 GB 或以上 |
+| 磁盘 | 20 GB 或以上（需预留备份空间） |
+| 系统 | Ubuntu 22.04+、Debian 12+ 或等效 Linux 发行版 |
+| 网络 | 开放内网 Web 端口；公网场景另行配置 HTTPS、访问控制和域名 |
 
-### 1.2 需要安装的软件
+### 1.2 安装 Docker
 
-| 软件 | 用途 | 安装方式 |
-|------|------|---------|
-| Docker + Docker Compose | 容器化部署 | 官方脚本 |
-| Git | 拉取代码 | `apt install git` |
-
----
-
-## 二、一键部署
-
-### 2.1 Ubuntu 服务器一键安装并部署
-
-进入项目目录后只需要运行：
+请按公司软件源策略或 Docker 官方文档安装 Docker Engine 和 Compose v2；部署脚本不会执行 `curl | sudo sh` 形式的远程安装命令。
 
 ```bash
+# 在项目根目录执行；若 Docker 未安装，脚本会给出安装说明并退出
 bash scripts/ubuntu-docker-deploy.sh
 ```
 
-脚本会自动完成：
-
-- 检查并安装 Docker
-- 自动创建 `.env`
-- 生成数据库密码、JWT 密钥，并设置初始管理员为 `Mixmind / Mixmind`
-- 构建并启动 PostgreSQL、后端 API、前端 Nginx
-- 首次启动后由后端自动同步 Prisma 数据库表
-
-### 2.2 如果 Docker 已安装，也可以直接启动
+## 二、首次部署
 
 ```bash
-./deploy.sh docker
+git clone https://github.com/ShanHuiSir/salary-system.git
+cd salary-system
+cp .env.example .env
+chmod 600 .env
 ```
 
-### 2.3 访问系统
+编辑 `.env`，为以下变量设置真实安全值：
 
-```
-http://<服务器IP>
-账号：Mixmind
-密码：Mixmind
+```dotenv
+DB_USER=salary_admin
+DB_PASSWORD=<强数据库密码>
+JWT_SECRET=<openssl rand -hex 32 的输出>
+JWT_REFRESH_SECRET=<另一条 openssl rand -hex 32 的输出>
+CLIENT_BIND=<服务器内网 IP 或 0.0.0.0>
+CLIENT_PORT=80
+CORS_ORIGIN=http://<服务器内网 IP 或域名>
+ADMIN_USERNAME=admin
+ADMIN_PASSWORD=<至少 12 位的初始管理员密码>
 ```
 
-如需导入演示数据，可在启动成功后执行：
+启动：
+
+```bash
+docker compose up -d --build
+docker compose ps
+```
+
+访问 `http://<服务器IP或域名>`，使用 `.env` 中设置的管理员账号登录。管理员只会在数据库不存在启用的超级管理员时创建；后续重新构建和同步不会覆盖账号管理中维护的密码。
+
+如需导入演示数据，可在服务健康后执行：
 
 ```bash
 docker compose exec server npm run db:seed
 ```
 
----
+## 三、从 db push 升级到 Prisma Migrate
 
-## 三、手动部署（不使用 Docker）
+新版本以 `prisma migrate deploy` 应用迁移。对于全新数据库，无须额外操作。
 
-如果你不想用 Docker，也可以手动部署：
-
-### 3.1 安装 PostgreSQL
+对于历史上使用 `prisma db push` 创建的数据库，初始迁移没有记录。升级前先备份，然后仅执行一次 baseline：
 
 ```bash
-# Ubuntu
-sudo apt install postgresql postgresql-contrib
-sudo systemctl enable postgresql
-sudo systemctl start postgresql
-
-# 创建数据库和用户
-sudo -u postgres psql <<EOF
-CREATE USER salary_admin WITH PASSWORD 'your-secure-password';
-CREATE DATABASE salary_db OWNER salary_admin;
-GRANT ALL PRIVILEGES ON DATABASE salary_db TO salary_admin;
-EOF
-```
-
-### 3.2 启动后端
-
-```bash
-cd server
-cp .env.example .env
-# 编辑 .env，填写正确的 DATABASE_URL 和密钥
-nano .env
-
-npm install
-npx prisma generate
-npx prisma db push
-npm run db:seed
-npm run build
-npm start    # 后端运行在 http://localhost:3000
-```
-
-### 3.3 启动前端
-
-```bash
-cd ../
-npm install
-npm run build    # 生成 dist/ 目录
-
-# 方式A：用 Nginx 托管
-sudo cp nginx.conf /etc/nginx/sites-available/salary
-sudo ln -s /etc/nginx/sites-available/salary /etc/nginx/sites-enabled/
-sudo cp -r dist/* /usr/share/nginx/html/
-sudo systemctl restart nginx
-
-# 方式B：用 Vite preview
-npm run preview -- --host 0.0.0.0 --port 80
-```
-
----
-
-## 四、环境变量说明
-
-创建 `.env` 文件（docker-compose 需要）：
-
-```bash
-# 数据库密码（生产环境请修改！）
-DB_USER=salary_admin
-DB_PASSWORD=your-secure-password-here
-
-# JWT 密钥（用 openssl rand -hex 32 生成）
-JWT_SECRET=your-generated-secret-key
-JWT_REFRESH_SECRET=your-another-secret-key
-
-# 前端访问端口
-CLIENT_PORT=80
-
-# CORS 允许的域名（改为实际访问地址）
-CORS_ORIGIN=http://your-server-ip-or-domain
-
-# 初始管理员（首次启动自动创建）
-ADMIN_USERNAME=Mixmind
-ADMIN_PASSWORD=Mixmind
-```
-
----
-
-## 五、常用运维命令
-
-```bash
-# 查看所有容器状态
-docker compose ps
-
-# 查看日志
-docker compose logs -f server
-docker compose logs -f postgres
-
-# 重启服务
-docker compose restart server
-
-# 重新构建并启动
+bash scripts/backup-postgres.sh
+docker compose run --rm server \
+  npx prisma migrate resolve --applied 20260721130000_init
 docker compose up -d --build
+```
 
-# 停止所有服务
-docker compose down
+该命令只登记迁移已经应用，不会创建表。不要在既有数据库上直接执行未 baseline 的初始迁移。
+
+## 四、更新与远程发布
+
+在服务器本地更新：
+
+```bash
+git pull
+docker compose up -d --build --remove-orphans
+docker compose ps
+```
+
+从开发机同步：
+
+```bash
+./sync-to-server.sh <user@server> [/opt/salary-system]
+```
+
+同步脚本会保留服务器 `.env`，部署前自动备份数据库（若备份脚本存在），并拒绝使用 `change-me` 等示例密钥。
+
+## 五、运维与备份
+
+```bash
+# 查看容器及日志
+docker compose ps
+docker compose logs -f server
 
 # 备份数据库
-docker compose exec postgres pg_dump -U salary_admin salary_db > backup_$(date +%Y%m%d).sql
+bash scripts/backup-postgres.sh
 
-# 恢复数据库
-docker compose exec -T postgres psql -U salary_admin salary_db < backup_20260715.sql
+# 重启后端
+docker compose restart server
 
-# 进入数据库命令行
-docker compose exec postgres psql -U salary_admin salary_db
+# 停止服务，保留数据
+docker compose down
+
+# 危险：删除数据库卷和所有数据
+docker compose down -v
 ```
 
----
+建议每天自动备份并保留足够的历史版本。例如：
 
-## 六、数据导入
-
-从旧系统（localStorage 的 JSON 导出）迁移数据：
-
-```bash
-# 1. 从浏览器导出 JSON（在数据管理页点击「导出数据」）
-# 2. 将 JSON 文件上传到服务器
-# 3. 用 curl 批量导入
-
-curl -X POST http://localhost:3000/api/v1/data/overview/batch \
-  -H "Authorization: Bearer <your-token>" \
-  -H "Content-Type: application/json" \
-  -d '{"items": [...]}'
+```cron
+0 2 * * * cd /opt/salary-system && bash scripts/backup-postgres.sh >> logs/backup.log 2>&1
 ```
 
----
+恢复前请先停止业务写入，并在隔离环境验证备份可用。
 
-## 七、安全加固（生产必做）
+## 六、安全检查
 
-```bash
-# 1. 验证初始管理员登录
-curl -X POST http://localhost:3000/api/v1/auth/login \
-  -H "Content-Type: application/json" \
-  -d '{"username":"Mixmind","password":"Mixmind"}'
+- `.env` 权限设为仅部署账号可读，且不提交到版本库。
+- 数据库密码、JWT 密钥和初始管理员密码不能使用示例值；管理员密码至少 12 位。
+- 防火墙仅开放需要的网段和端口；不要将 PostgreSQL 端口暴露到公网。
+- 生产环境应在反向代理层配置 HTTPS；将 `CORS_ORIGIN` 设为实际来源。
+- 日常更新不要运行 `docker compose down -v`。
 
-# 2. 配置防火墙
-sudo ufw allow 80/tcp
-sudo ufw allow 443/tcp
-sudo ufw allow 22/tcp
-sudo ufw enable
+## 七、常见问题
 
-# 3. 配置 HTTPS（可选）
-# 安装 certbot 获取免费 SSL 证书
-sudo apt install certbot python3-certbot-nginx
-sudo certbot --nginx -d your-domain.com
-```
-
----
-
-## 八、故障排查
-
-| 问题 | 检查方法 |
+| 问题 | 检查方式 |
 |------|---------|
-| 无法访问页面 | `docker compose ps` 确认容器运行中 |
-| 数据库连接失败 | `docker compose logs postgres` |
-| 后端 API 500 错误 | `docker compose logs server` |
-| 前端显示 SSL 错误 | 检查 CORS_ORIGIN 配置 |
-| 端口被占用 | `sudo lsof -i :80` 查看占用 |
+| 前端无法访问 | `docker compose ps`，确认 `client` 正常并检查防火墙/端口 |
+| 后端不健康 | `docker compose logs server`，检查数据库、迁移与环境变量 |
+| 数据库连接失败 | `docker compose logs postgres`，检查 `DB_PASSWORD` 和数据卷状态 |
+| 首次升级迁移失败 | 确认历史数据库已按第三节执行 `migrate resolve --applied 20260721130000_init` |
+| 账号无法登录 | 检查账号是否被停用、管理员密码是否为 `.env` 中首次设置的密码 |

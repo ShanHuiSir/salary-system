@@ -29,14 +29,18 @@ import {
 import { KpiCard } from '@/components/dashboard/KpiCard';
 import { SegmentOverviewCard } from '@/components/dashboard/SegmentOverviewCard';
 import { AnalysisPanel } from '@/components/dashboard/AnalysisPanel';
-import { DashboardCustomizer, useDashboardLayout } from '@/components/dashboard/DashboardCustomizer';
+import { DashboardCustomizer } from '@/components/dashboard/DashboardCustomizer';
+import { useDashboardLayout } from '@/components/dashboard/useDashboardLayout';
 import { DataPathTracer } from '@/components/dashboard/DataPathTracer';
+import type { AuthUser } from '@/lib/api';
+import { canAccessDataBinding, canCustomizeDashboardLayout, isReadOnlyUser } from '@/lib/permissions';
 import type { DataSourceMap } from '@/utils/dataPathEngine';
 import { useData } from '@/contexts/DataContext';
-import type { DepartmentData, MonthlyOverview } from '@/types';
+import type { CostStructureData, DepartmentData, MonthlyOverview } from '@/types';
 import { getDeptSortIndex } from '@/types';
 import { generateSegmentAnalysis, generateOverviewAnalysis } from '@/utils/analysisEngine';
 import { generateSegmentCardAnalysis, getSegmentDataSource } from '@/utils/segmentAnalysis';
+import { cn } from '@/lib/utils';
 
 const CHART_COLORS = ['#2563eb', '#16a34a', '#f59e0b', '#dc2626', '#8b5cf6', '#06b6d4'];
 
@@ -158,7 +162,7 @@ function getCumulativeDeptData(
   };
 }
 
-export function DashboardPage() {
+export function DashboardPage({ user }: { user: AuthUser }) {
   const { overviews: rawOverviews, departments, compositions, positions, stores, budgets, costStructures, loadedFromStorage, loading, syncError } = useData();
   
   // ===== 数据联动诊断 =====
@@ -181,11 +185,25 @@ export function DashboardPage() {
       console.warn('[DashboardPage] ⚠ rawOverviews 为空！数据看板可能未联动数据管理模块。');
     }
   }, [rawOverviews, departments, compositions, positions, stores, budgets]);
-  
+
   const layout = useDashboardLayout();
+  const readonly = isReadOnlyUser(user);
+  const canCustomizeLayout = canCustomizeDashboardLayout(user);
+  const showDataBinding = canAccessDataBinding(user);
   const [customizerOpen, setCustomizerOpen] = useState(false);
   const navigate = useNavigate();
   const isBlockVisible = (id: string) => layout.isVisible(id);
+  const blockStyle = (id: string) => ({ order: layout.getOrderIndex(id) + 1 });
+  const blockGridClass = (id: string) => {
+    const widthClassMap = {
+      4: 'lg:col-span-4',
+      6: 'lg:col-span-6',
+      8: 'lg:col-span-8',
+      12: 'lg:col-span-12',
+    } as const;
+
+    return cn('col-span-12', widthClassMap[layout.getWidth(id)]);
+  };
   const [searchParams, setSearchParams] = useSearchParams();
 
   // ===== 核心联动：优先使用月度总览数据，部门数据缺失月份用部门数据回退派生 =====
@@ -551,6 +569,10 @@ export function DashboardPage() {
   // 人力成本组成结构数据
   const costStructureChartData = useMemo(() => {
     const segmentKey = dimension === '总览' ? null : DIMENSION_MAP[dimension];
+    const leavePay = (item: CostStructureData) =>
+      item.sickMaternityAnnualLeave ??
+      ((item.annualLeaveAllowance ?? 0) + (item.sickLeavePay ?? 0) + (item.maternityLeavePay ?? 0));
+    const severancePay = (item: CostStructureData) => item.severance ?? item.jjbcj ?? 0;
     const monthData = costStructures.filter(
       (c) => c.month === selectedMonth && (segmentKey ? c.segment === segmentKey : true)
     );
@@ -565,20 +587,18 @@ export function DashboardPage() {
           acc.attendanceSalary += item.attendanceSalary;
           acc.performanceBonus += item.performanceBonus;
           acc.overtimePay += item.overtimePay;
-          acc.annualLeaveAllowance += item.annualLeaveAllowance;
-          acc.sickLeavePay += item.sickLeavePay;
-          acc.maternityLeavePay += item.maternityLeavePay;
+          acc.sickMaternityAnnualLeave += leavePay(item);
+          acc.severance += severancePay(item);
           acc.otherPayable += item.otherPayable;
           acc.employerSocialInsurance += item.employerSocialInsurance;
           return acc;
-        }, { attendanceSalary: 0, performanceBonus: 0, overtimePay: 0, annualLeaveAllowance: 0, sickLeavePay: 0, maternityLeavePay: 0, otherPayable: 0, employerSocialInsurance: 0 });
+        }, { attendanceSalary: 0, performanceBonus: 0, overtimePay: 0, sickMaternityAnnualLeave: 0, severance: 0, otherPayable: 0, employerSocialInsurance: 0 });
         return { pieData: [
           { name: '考勤工资', value: parseFloat(total.attendanceSalary.toFixed(1)) },
           { name: '效益奖金', value: parseFloat(total.performanceBonus.toFixed(1)) },
           { name: '加班费', value: parseFloat(total.overtimePay.toFixed(1)) },
-          { name: '年假补贴', value: parseFloat(total.annualLeaveAllowance.toFixed(1)) },
-          { name: '病假工资', value: parseFloat(total.sickLeavePay.toFixed(1)) },
-          { name: '产假工资', value: parseFloat(total.maternityLeavePay.toFixed(1)) },
+          { name: '病假/产假/年假工资', value: parseFloat(total.sickMaternityAnnualLeave.toFixed(1)) },
+          { name: '经济补偿金', value: parseFloat(total.severance.toFixed(1)) },
           { name: '其他应发', value: parseFloat(total.otherPayable.toFixed(1)) },
           { name: '单位社保公积金', value: parseFloat(total.employerSocialInsurance.toFixed(1)) },
         ].filter((d) => d.value > 0), segmentData: [] };
@@ -592,9 +612,8 @@ export function DashboardPage() {
           考勤工资: parseFloat(segItems.reduce((s, c) => s + c.attendanceSalary, 0).toFixed(1)),
           效益奖金: parseFloat(segItems.reduce((s, c) => s + c.performanceBonus, 0).toFixed(1)),
           加班费: parseFloat(segItems.reduce((s, c) => s + c.overtimePay, 0).toFixed(1)),
-          年假补贴: parseFloat(segItems.reduce((s, c) => s + c.annualLeaveAllowance, 0).toFixed(1)),
-          病假工资: parseFloat(segItems.reduce((s, c) => s + c.sickLeavePay, 0).toFixed(1)),
-          产假工资: parseFloat(segItems.reduce((s, c) => s + c.maternityLeavePay, 0).toFixed(1)),
+          '病假/产假/年假工资': parseFloat(segItems.reduce((s, c) => s + leavePay(c), 0).toFixed(1)),
+          经济补偿金: parseFloat(segItems.reduce((s, c) => s + severancePay(c), 0).toFixed(1)),
           其他应发: parseFloat(segItems.reduce((s, c) => s + c.otherPayable, 0).toFixed(1)),
           单位社保公积金: parseFloat(segItems.reduce((s, c) => s + c.employerSocialInsurance, 0).toFixed(1)),
         };
@@ -610,9 +629,8 @@ export function DashboardPage() {
           { name: '考勤工资', value: d.attendanceSalary },
           { name: '效益奖金', value: d.performanceBonus },
           { name: '加班费', value: d.overtimePay },
-          { name: '年假补贴', value: d.annualLeaveAllowance },
-          { name: '病假工资', value: d.sickLeavePay },
-          { name: '产假工资', value: d.maternityLeavePay },
+          { name: '病假/产假/年假工资', value: leavePay(d) },
+          { name: '经济补偿金', value: severancePay(d) },
           { name: '其他应发', value: d.otherPayable },
           { name: '单位社保公积金', value: d.employerSocialInsurance },
         ].filter((d) => d.value > 0),
@@ -629,9 +647,8 @@ export function DashboardPage() {
         考勤工资: d?.attendanceSalary ?? 0,
         效益奖金: d?.performanceBonus ?? 0,
         加班费: d?.overtimePay ?? 0,
-        年假补贴: d?.annualLeaveAllowance ?? 0,
-        病假工资: d?.sickLeavePay ?? 0,
-        产假工资: d?.maternityLeavePay ?? 0,
+        '病假/产假/年假工资': d ? leavePay(d) : 0,
+        经济补偿金: d ? severancePay(d) : 0,
         其他应发: d?.otherPayable ?? 0,
         单位社保公积金: d?.employerSocialInsurance ?? 0,
       };
@@ -763,9 +780,11 @@ export function DashboardPage() {
     : '';
 
   return (
-    <div className="space-y-6">
+    <div className="flex items-start gap-6">
+      <div className="min-w-0 flex-1">
+    <div className="grid grid-cols-12 gap-6">
       {/* Header with month selector and view mode tabs */}
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+      <div className="col-span-12 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between" style={{ order: 0 }}>
         <div>
           <h2 className="text-2xl font-bold tracking-tight">数据看板</h2>
           <p className="text-sm text-muted-foreground">
@@ -800,19 +819,27 @@ export function DashboardPage() {
               <TabsTrigger value="cumulative">年度累计</TabsTrigger>
             </TabsList>
           </Tabs>
-          <Button variant="outline" size="sm" onClick={() => setCustomizerOpen(true)}>
-            <LayoutGrid className="mr-2 h-4 w-4" />
-            自定义排版
-          </Button>
-          <Button variant="outline" size="sm" onClick={() => navigate('/data-binding')}>
-            <Link2 className="mr-2 h-4 w-4" />
-            数据绑定配置
-          </Button>
+          {readonly && (
+            <span className="rounded-full border bg-muted px-3 py-1 text-xs text-muted-foreground">只读模式</span>
+          )}
+          {canCustomizeLayout && (
+            <Button variant="outline" size="sm" onClick={() => setCustomizerOpen((open) => !open)}>
+              <LayoutGrid className="mr-2 h-4 w-4" />
+              {customizerOpen ? '收起优化侧栏' : '页面优化侧栏'}
+            </Button>
+          )}
+          {showDataBinding && (
+            <Button variant="outline" size="sm" onClick={() => navigate('/data-binding')}>
+              <Link2 className="mr-2 h-4 w-4" />
+              数据绑定配置
+            </Button>
+          )}
         </div>
       </div>
 
       {/* KPI Cards */}
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      {isBlockVisible('kpi-cards') && (
+      <div className={cn(blockGridClass('kpi-cards'), 'grid gap-4 sm:grid-cols-2 lg:grid-cols-4')} style={blockStyle('kpi-cards')}>
         {isOverview ? (
           viewMode === 'cumulative' ? (
             <>
@@ -1030,10 +1057,11 @@ export function DashboardPage() {
           </>
         )}
       </div>
+      )}
 
       {/* 渠道业绩明细 (总览 only) */}
-      {isOverview && activeOverview && (
-        <div className="space-y-3">
+      {isBlockVisible('revenue-channels') && isOverview && activeOverview && (
+        <div className={cn(blockGridClass('revenue-channels'), 'space-y-3')} style={blockStyle('revenue-channels')}>
           <h3 className="text-base font-semibold">
             {viewMode === 'cumulative' ? '累计业绩分渠道' : '业绩分渠道'}
           </h3>
@@ -1076,8 +1104,8 @@ export function DashboardPage() {
       )}
 
       {/* 四大板块概况 (总览 only) */}
-      {isOverview && (
-        <div className="space-y-3">
+      {isBlockVisible('segment-overview') && isOverview && (
+        <div className={cn(blockGridClass('segment-overview'), 'space-y-3')} style={blockStyle('segment-overview')}>
           <div className="flex items-center justify-between">
             <h3 className="text-base font-semibold">
               {viewMode === 'cumulative' ? '四大业务板块分布（累计）' : '四大业务板块分布'}
@@ -1162,8 +1190,8 @@ export function DashboardPage() {
       )}
 
       {/* 人力成本预算使用率 (总览 only) */}
-      {isOverview && budgetUsageData.some((d) => d.人力成本 > 0 || d.预算人力成本 > 0) && (
-        <div className="space-y-3">
+      {isBlockVisible('budget-usage') && isOverview && budgetUsageData.some((d) => d.人力成本 > 0 || d.预算人力成本 > 0) && (
+        <div className={cn(blockGridClass('budget-usage'), 'space-y-3')} style={blockStyle('budget-usage')}>
           <div className="flex items-center justify-between">
             <h3 className="text-base font-semibold">
               {viewMode === 'cumulative' ? '累计人力成本预算使用率' : '人力成本预算使用率'}
@@ -1261,8 +1289,8 @@ export function DashboardPage() {
       )}
 
       {/* 人力成本组成结构 */}
-      {(dimension === '总部' || isOverview) && costStructureChartData.pieData.length > 0 || costStructureChartData.segmentData.length > 0 ? (
-        <div className="grid gap-4 lg:grid-cols-2">
+      {isBlockVisible('cost-structure') && ((dimension === '总部' || isOverview) && costStructureChartData.pieData.length > 0 || costStructureChartData.segmentData.length > 0) ? (
+        <div className={cn(blockGridClass('cost-structure'), 'grid gap-4 lg:grid-cols-2')} style={blockStyle('cost-structure')}>
           {costStructureChartData.pieData.length > 0 && (
             <Card>
               <CardHeader>
@@ -1335,7 +1363,8 @@ export function DashboardPage() {
       ) : null}
 
       {/* Charts row 1 */}
-      <div className="grid gap-4 lg:grid-cols-2">
+      {isBlockVisible('chart-trend') && (
+      <div className={cn(blockGridClass('chart-trend'), 'grid gap-4 lg:grid-cols-2')} style={blockStyle('chart-trend')}>
         {viewMode === 'cumulative' ? (
           <Card>
             <CardHeader>
@@ -1522,9 +1551,11 @@ export function DashboardPage() {
           </Card>
         )}
       </div>
+      )}
 
       {/* Charts row 2 */}
-      <div className="grid gap-4 lg:grid-cols-2">
+      {isBlockVisible('chart-composition') && (
+      <div className={cn(blockGridClass('chart-composition'), 'grid gap-4 lg:grid-cols-2')} style={blockStyle('chart-composition')}>
         {isOverview ? (
           <Card>
             <CardHeader>
@@ -1651,25 +1682,33 @@ export function DashboardPage() {
           </CardContent>
         </Card>
       </div>
+      )}
 
       {/* 数据分析面板 */}
       {isBlockVisible('analysis-panel') && (
+        <div className={blockGridClass('analysis-panel')} style={blockStyle('analysis-panel')}>
         <AnalysisPanel
           analysis={analysis}
           title={`${dimension}数据分析 · ${viewMode === 'cumulative' ? cumulativeLabel : monthLabel}`}
         />
+        </div>
       )}
 
-      {/* 自定义排版对话框 */}
-      <DashboardCustomizer
-        open={customizerOpen}
-        onOpenChange={setCustomizerOpen}
-        blocks={layout.blocks}
-        onMoveUp={layout.moveUp}
-        onMoveDown={layout.moveDown}
-        onToggleVisible={layout.toggleVisible}
-        onReset={layout.reset}
-      />
+    </div>
+      </div>
+      {canCustomizeLayout && (
+        <DashboardCustomizer
+          open={customizerOpen}
+          onOpenChange={setCustomizerOpen}
+          blocks={layout.blocks}
+          onMoveUp={layout.moveUp}
+          onMoveDown={layout.moveDown}
+          onMoveTo={layout.moveTo}
+          onToggleVisible={layout.toggleVisible}
+          onWidthChange={layout.setWidth}
+          onReset={layout.reset}
+        />
+      )}
     </div>
   );
 }

@@ -1,6 +1,6 @@
 import { useEffect, useMemo } from 'react';
 import { useForm } from 'react-hook-form';
-import { useNavigate, useParams } from 'react-router-dom';
+import { Navigate, useNavigate, useParams } from 'react-router-dom';
 import { Save, ArrowLeft, FunctionSquare } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -15,6 +15,8 @@ import { computeFormulaFields } from '@/utils/formulaEngine';
 import { isSystemCalculatedField, prepareSalaryFormValues } from '@/utils/salaryCalculations';
 import type { DataType } from '@/types';
 import type { FieldDef } from '@/types/fieldConfig';
+import type { AuthUser } from '@/lib/api';
+import { canWriteDataType } from '@/lib/permissions';
 
 const dataTypeLabels: Record<DataType, string> = {
   overview: '月度总览',
@@ -76,7 +78,7 @@ function validateField(field: FieldDef, value: unknown): string | undefined {
   return undefined;
 }
 
-export function DataFormPage() {
+export function DataFormPage({ user }: { user: AuthUser }) {
   const { type, id } = useParams<{ type: DataType; id: string }>();
   const navigate = useNavigate();
   const { toast } = useToast();
@@ -85,6 +87,10 @@ export function DataFormPage() {
 
   if (!type || !(type in dataTypeLabels)) {
     return <div className="p-8 text-center">无效的数据类型</div>;
+  }
+
+  if (!canWriteDataType(user, type)) {
+    return <Navigate to="/data" replace />;
   }
 
   const isNew = id === 'new';

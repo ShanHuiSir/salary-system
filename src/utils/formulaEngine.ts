@@ -1,4 +1,5 @@
 import type { FieldDef, FormulaDef } from '@/types/fieldConfig';
+import { evaluate } from 'mathjs';
 
 /**
  * 公式计算引擎
@@ -9,7 +10,7 @@ import type { FieldDef, FormulaDef } from '@/types/fieldConfig';
 /** 从公式表达式中提取依赖的字段键名 */
 export function extractDependencies(expression: string): string[] {
   // 匹配变量名：字母开头，后跟字母/数字/下划线
-  const regex = /[a-zA-Z_][a-zA-Z0-9_]* /g;
+  const regex = /[a-zA-Z_][a-zA-Z0-9_]*/g;
   const matches = expression.match(regex);
   if (!matches) return [];
   // 过滤掉数学函数名（如果将来支持）
@@ -41,7 +42,8 @@ export function evaluateFormula(
     let safeExpr = expression;
     for (const key of sortedKeys) {
       // 使用全局替换，但只替换完整的变量名（前后不是字母/数字/下划线）
-      const regex = new RegExp(`(?<![a-zA-Z0-9_])${key}(?![a-zA-Z0-9_])`, 'g');
+      const escapedKey = key.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const regex = new RegExp(`(?<![a-zA-Z0-9_])${escapedKey}(?![a-zA-Z0-9_])`, 'g');
       const val = variables[key];
       safeExpr = safeExpr.replace(regex, `(${val})`);
     }
@@ -56,9 +58,8 @@ export function evaluateFormula(
     // 空表达式
     if (sanitized.trim() === '') return null;
 
-    // 执行计算
-    const result = Function(`"use strict"; return (${safeExpr})`)() as number;
-
+    // mathjs 在受限字符集上执行数学表达式，避免动态执行 JavaScript 代码。
+    const result = evaluate(sanitized);
     if (typeof result !== 'number' || !Number.isFinite(result)) return null;
 
     // 应用精度

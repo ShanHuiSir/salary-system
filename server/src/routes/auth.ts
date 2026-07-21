@@ -3,10 +3,19 @@ import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import { prisma } from '../utils/prisma.js';
 import { success, fail, serverError } from '../utils/response.js';
-import { authenticate, type JwtPayload } from '../middleware/auth.js';
+import { authenticate, isUserRole, type JwtPayload } from '../middleware/auth.js';
 
-const JWT_SECRET = process.env.JWT_SECRET || 'dev-secret-change-me';
-const JWT_REFRESH_SECRET = process.env.JWT_REFRESH_SECRET || 'dev-refresh-secret';
+function getJwtSecret(name: 'JWT_SECRET' | 'JWT_REFRESH_SECRET', developmentFallback: string): string {
+  const value = process.env[name]?.trim();
+  if (value) return value;
+  if (process.env.NODE_ENV === 'production') {
+    throw new Error(`生产环境必须设置 ${name}`);
+  }
+  return developmentFallback;
+}
+
+const JWT_SECRET = getJwtSecret('JWT_SECRET', 'dev-secret-change-me');
+const JWT_REFRESH_SECRET = getJwtSecret('JWT_REFRESH_SECRET', 'dev-refresh-secret');
 const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || '2h';
 const JWT_REFRESH_EXPIRES_IN = process.env.JWT_REFRESH_EXPIRES_IN || '7d';
 
@@ -25,6 +34,12 @@ authRouter.post('/login', async (req: Request, res: Response) => {
     const user = await prisma.user.findUnique({ where: { username } });
     if (!user) {
       return fail(res, 1002, '用户名或密码错误', 401);
+    }
+    if (!user.isActive) {
+      return fail(res, 1002, '账号已停用，请联系管理员', 401);
+    }
+    if (!isUserRole(user.role)) {
+      return fail(res, 1003, '账号角色无效，请联系管理员', 403);
     }
 
     // 检查是否锁定
@@ -88,6 +103,7 @@ authRouter.post('/login', async (req: Request, res: Response) => {
         username: user.username,
         displayName: user.displayName,
         role: user.role,
+        departmentScope: user.departmentScope,
       },
     });
   } catch (error) {
@@ -112,6 +128,18 @@ authRouter.post('/refresh', async (req: Request, res: Response) => {
       return fail(res, 1002, 'refreshToken 无效或已过期', 401);
     }
 
+    // 刷新令牌也必须校验账号当前状态，确保停用/角色变更立即生效。
+    const user = await prisma.user.findUnique({
+      where: { id: payload.userId },
+      select: { id: true, username: true, role: true, isActive: true },
+    });
+    if (!user || !user.isActive) {
+      return fail(res, 1002, '账号不存在或已停用', 401);
+    }
+    if (!isUserRole(user.role)) {
+      return fail(res, 1003, '账号角色无效，请联系管理员', 403);
+    }
+
     // 验证 refresh token 未被撤销
     const tokens = await prisma.refreshToken.findMany({
       where: { userId: payload.userId, revoked: false },
@@ -132,7 +160,7 @@ authRouter.post('/refresh', async (req: Request, res: Response) => {
     }
 
     const newAccessToken = jwt.sign(
-      { userId: payload.userId, username: payload.username, role: payload.role },
+      { userId: user.id, username: user.username, role: user.role },
       JWT_SECRET,
       { expiresIn: JWT_EXPIRES_IN } as jwt.SignOptions,
     );

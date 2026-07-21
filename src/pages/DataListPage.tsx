@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Plus, Search, Pencil, Trash2, RotateCcw, Upload, Settings2, Trash, FileText } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -43,6 +43,15 @@ import { computeFormulaFields } from '@/utils/formulaEngine';
 import type { DataType } from '@/types';
 import type { FieldDef } from '@/types/fieldConfig';
 import { getDeptSortIndex } from '@/types';
+import type { AuthUser } from '@/lib/api';
+import {
+  canClearAllData,
+  canDeleteDataType,
+  canManageFieldConfig,
+  canResetData,
+  canWriteDataType,
+  getReadableDataTypes,
+} from '@/lib/permissions';
 
 const dataTypeLabels: Record<DataType, string> = {
   overview: '月度总览',
@@ -69,7 +78,7 @@ function formatFieldValue(value: unknown, field: FieldDef): string {
   return String(value);
 }
 
-export function DataListPage() {
+export function DataListPage({ user }: { user: AuthUser }) {
   const [activeType, setActiveType] = useState<DataType>('overview');
   const [search, setSearch] = useState('');
   const [deleteId, setDeleteId] = useState<string | null>(null);
@@ -94,6 +103,19 @@ export function DataListPage() {
     operationLogs,
   } = useData();
   const { getFields } = useFieldConfig();
+
+  const readableDataTypes = useMemo(() => getReadableDataTypes(user), [user]);
+  const canEditActiveType = canWriteDataType(user, activeType);
+  const canDeleteActiveType = canDeleteDataType(user, activeType);
+  const canManageFields = canManageFieldConfig(user);
+  const canResetAll = canResetData(user);
+  const canClearAll = canClearAllData(user);
+
+  useEffect(() => {
+    if (readableDataTypes.length > 0 && !readableDataTypes.includes(activeType)) {
+      setActiveType(readableDataTypes[0]);
+    }
+  }, [activeType, readableDataTypes]);
 
   const listFields = useMemo(() => getListVisibleFields(getFields(activeType)), [activeType, getFields]);
   const allFieldsForDataType = useMemo(() => getFields(activeType), [activeType, getFields]);
@@ -206,42 +228,46 @@ export function DataListPage() {
 
   const actions = (id: string) => (
     <div className="flex items-center justify-end gap-2">
-      <Button
-        variant="ghost"
-        size="icon"
-        onClick={() => navigate(`/data/${activeType}/${id}`)}
-        aria-label="编辑"
-      >
-        <Pencil className="h-4 w-4" />
-      </Button>
-      <AlertDialog open={deleteId === id} onOpenChange={(open) => !open && setDeleteId(null)}>
-        <AlertDialogTrigger asChild>
-          <Button
-            variant="ghost"
-            size="icon"
-            className="text-destructive hover:text-destructive"
-            onClick={() => setDeleteId(id)}
-            aria-label="删除"
-          >
-            <Trash2 className="h-4 w-4" />
-          </Button>
-        </AlertDialogTrigger>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>确认删除？</AlertDialogTitle>
-            <AlertDialogDescription>删除后无法恢复，请确认是否继续。</AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel onClick={() => setDeleteId(null)}>取消</AlertDialogCancel>
-            <AlertDialogAction onClick={handleDelete} className="bg-destructive text-destructive-foreground">
-              删除
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+      {canEditActiveType && (
+        <Button
+          variant="ghost"
+          size="icon"
+          onClick={() => navigate(`/data/${activeType}/${id}`)}
+          aria-label="编辑"
+        >
+          <Pencil className="h-4 w-4" />
+        </Button>
+      )}
+      {canDeleteActiveType && (
+        <AlertDialog open={deleteId === id} onOpenChange={(open) => !open && setDeleteId(null)}>
+          <AlertDialogTrigger asChild>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="text-destructive hover:text-destructive"
+              onClick={() => setDeleteId(id)}
+              aria-label="删除"
+            >
+              <Trash2 className="h-4 w-4" />
+            </Button>
+          </AlertDialogTrigger>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>确认删除？</AlertDialogTitle>
+              <AlertDialogDescription>删除后无法恢复，请确认是否继续。</AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel onClick={() => setDeleteId(null)}>取消</AlertDialogCancel>
+              <AlertDialogAction onClick={handleDelete} className="bg-destructive text-destructive-foreground">
+                删除
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+      )}
+      {!canEditActiveType && !canDeleteActiveType && <span className="text-xs text-muted-foreground">只读</span>}
     </div>
   );
-
   const renderCell = (row: Record<string, unknown>, field: FieldDef) => {
     const value = row[field.key];
     if (field.type === 'formula') {
@@ -302,7 +328,7 @@ export function DataListPage() {
               </Badge>
             )}
           </Button>
-          <AlertDialog open={resetOpen} onOpenChange={setResetOpen}>
+          {canResetAll && <AlertDialog open={resetOpen} onOpenChange={setResetOpen}>
             <AlertDialogTrigger asChild>
               <Button variant="outline" size="sm">
                 <RotateCcw className="mr-2 h-4 w-4" />
@@ -323,10 +349,10 @@ export function DataListPage() {
                 </AlertDialogAction>
               </AlertDialogFooter>
             </AlertDialogContent>
-          </AlertDialog>
+          </AlertDialog>}
 
           {/* 一键清空源数据 */}
-          <AlertDialog open={clearOpen} onOpenChange={(open) => { setClearOpen(open); if (!open) setClearConfirmText(''); }}>
+          {canClearAll && <AlertDialog open={clearOpen} onOpenChange={(open) => { setClearOpen(open); if (!open) setClearConfirmText(''); }}>
             <AlertDialogTrigger asChild>
               <Button variant="outline" size="sm" className="text-destructive hover:text-destructive hover:bg-destructive/5 border-destructive/30">
                 <Trash className="mr-2 h-4 w-4" />
@@ -383,27 +409,33 @@ export function DataListPage() {
                 </AlertDialogAction>
               </AlertDialogFooter>
             </AlertDialogContent>
-          </AlertDialog>
+          </AlertDialog>}
 
-          <div className="w-px h-6 bg-border mx-1 hidden sm:block" />
-          <Button variant="outline" size="sm" onClick={() => setFieldConfigOpen(true)}>
-            <Settings2 className="mr-2 h-4 w-4" />
-            字段配置
-          </Button>
-          <Button variant="outline" onClick={() => setImportOpen(true)}>
-            <Upload className="mr-2 h-4 w-4" />
-            批量导入
-          </Button>
-          <Button onClick={() => navigate(`/data/${activeType}/new`)}>
-            <Plus className="mr-2 h-4 w-4" />
-            新增
-          </Button>
+          {(canManageFields || canEditActiveType) && <div className="w-px h-6 bg-border mx-1 hidden sm:block" />}
+          {canManageFields && (
+            <Button variant="outline" size="sm" onClick={() => setFieldConfigOpen(true)}>
+              <Settings2 className="mr-2 h-4 w-4" />
+              字段配置
+            </Button>
+          )}
+          {canEditActiveType && (
+            <>
+              <Button variant="outline" onClick={() => setImportOpen(true)}>
+                <Upload className="mr-2 h-4 w-4" />
+                批量导入
+              </Button>
+              <Button onClick={() => navigate(`/data/${activeType}/new`)}>
+                <Plus className="mr-2 h-4 w-4" />
+                新增
+              </Button>
+            </>
+          )}
         </div>
       </div>
 
       <Tabs value={activeType} onValueChange={(v) => setActiveType(v as DataType)} className="w-full">
         <TabsList className="flex flex-wrap h-auto">
-          {(Object.keys(dataTypeLabels) as DataType[]).map((key) => (
+          {readableDataTypes.map((key) => (
             <TabsTrigger key={key} value={key}>
               {dataTypeLabels[key]}
             </TabsTrigger>
@@ -425,9 +457,9 @@ export function DataListPage() {
               className="pl-9"
             />
           </div>
-          <div className="overflow-auto rounded-md border max-h-[calc(100vh-300px)]">
+          <div className="max-h-[calc(100vh-300px)] max-w-full overflow-auto rounded-md border">
             {filtered.length > 0 ? (
-              <Table>
+              <Table className="min-w-[960px]">
                 <TableHeader className="sticky top-0 z-10 bg-card">
                   <TableRow>
                     {listFields.map((field) => (
@@ -461,16 +493,20 @@ export function DataListPage() {
         </CardContent>
       </Card>
 
-      <ImportDialog
-        open={importOpen}
-        onOpenChange={setImportOpen}
-        dataType={activeType}
-      />
+      {canEditActiveType && (
+        <ImportDialog
+          open={importOpen}
+          onOpenChange={setImportOpen}
+          dataType={activeType}
+        />
+      )}
 
-      <FieldConfigDialog
-        open={fieldConfigOpen}
-        onOpenChange={setFieldConfigOpen}
-      />
+      {canManageFields && (
+        <FieldConfigDialog
+          open={fieldConfigOpen}
+          onOpenChange={setFieldConfigOpen}
+        />
+      )}
 
       {/* 操作日志查看器 */}
       <Dialog open={logOpen} onOpenChange={setLogOpen}>

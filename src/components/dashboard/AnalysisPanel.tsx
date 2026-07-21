@@ -64,14 +64,14 @@ export function AnalysisPanel({ analysis, title }: AnalysisPanelProps) {
   const headerTitle = title ?? `${analysis.dimension}数据分析`;
 
   return (
-    <Card className="border-l-4 border-l-primary/40">
+    <Card className="min-w-0 overflow-hidden border-l-4 border-l-primary/40">
       <CardHeader className="pb-3">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-start justify-between gap-2">
+          <div className="flex min-w-0 items-center gap-2">
             <Lightbulb className="h-5 w-5 text-primary" />
-            <CardTitle className="text-base">{headerTitle}</CardTitle>
+            <CardTitle className="break-words text-base">{headerTitle}</CardTitle>
           </div>
-          <div className="flex items-center gap-1.5">
+          <div className="flex flex-wrap items-center gap-1.5">
             {positiveCount > 0 && (
               <Badge variant="secondary" className="bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300">
                 利好 {positiveCount}
@@ -94,10 +94,10 @@ export function AnalysisPanel({ analysis, title }: AnalysisPanelProps) {
             )}
           </div>
         </div>
-        <p className="text-sm text-muted-foreground mt-1">{analysis.summary}</p>
+        <p className="mt-1 break-words text-sm text-muted-foreground">{analysis.summary}</p>
       </CardHeader>
       <CardContent>
-        <ScrollArea className="max-h-[420px]">
+        <ScrollArea className="max-h-[min(60vh,420px)] overflow-y-auto pr-1">
           <div className="space-y-3 pr-3">
             {analysis.items.length === 0 ? (
               <div className="flex items-center justify-center py-8 text-sm text-muted-foreground">
@@ -110,23 +110,23 @@ export function AnalysisPanel({ analysis, title }: AnalysisPanelProps) {
                 return (
                   <div
                     key={index}
-                    className={`flex gap-3 rounded-lg border ${config.borderColor} ${config.bgColor} p-3`}
+                    className={`flex min-w-0 gap-3 rounded-lg border ${config.borderColor} ${config.bgColor} p-3`}
                   >
                     <div className={`mt-0.5 shrink-0 ${config.color}`}>
                       <Icon className="h-4 w-4" />
                     </div>
-                    <div className="flex-1 space-y-1">
-                      <div className="flex items-center gap-2">
-                        <span className="text-sm font-medium">{item.title}</span>
+                    <div className="min-w-0 flex-1 space-y-1">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="break-words text-sm font-medium">{item.title}</span>
                         <Badge variant={config.badgeVariant} className="text-[10px] px-1 py-0 h-4">
                           {config.label}
                         </Badge>
                       </div>
-                      <p className="text-sm text-muted-foreground leading-relaxed">
+                      <p className="break-words text-sm leading-relaxed text-muted-foreground">
                         {item.content}
                       </p>
                       {item.detail && (
-                        <p className="text-xs text-muted-foreground/80 italic">
+                        <p className="break-words text-xs italic text-muted-foreground/80">
                           {item.detail}
                         </p>
                       )}

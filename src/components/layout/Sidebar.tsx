@@ -1,15 +1,18 @@
 import { useState, useEffect } from 'react';
 import { NavLink, useLocation } from 'react-router-dom';
-import { LayoutDashboard, Table2, X, ChevronDown, ChevronRight, Link2 } from 'lucide-react';
+import { LayoutDashboard, Table2, X, ChevronDown, ChevronRight, Link2, Users } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Sheet, SheetContent } from '@/components/ui/sheet';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { cn } from '@/lib/utils';
+import { canAccessDataBinding, canAccessDataManagement, canAccessReports, canManageUsers, isReadOnlyUser } from '@/lib/permissions';
+import type { AuthUser } from '@/lib/api';
 
 interface SidebarProps {
   mobileOpen: boolean;
   setMobileOpen: (open: boolean) => void;
+  user: AuthUser;
 }
 
 type Dimension = '总览' | '总部' | '自营区域' | '线上' | '犀利工厂';
@@ -46,7 +49,7 @@ const SUB_REPORTS: Record<'总部' | '自营区域' | '线上' | '犀利工厂',
 
 const DIMENSIONS_WITH_SUBS: Dimension[] = ['总部', '自营区域', '线上', '犀利工厂'];
 
-function NavList({ onClick }: { onClick?: () => void }) {
+function NavList({ user, onClick }: { user: AuthUser; onClick?: () => void }) {
   const { pathname, search } = useLocation();
   const [dashboardOpen, setDashboardOpen] = useState(true);
   const [overviewSubOpen, setOverviewSubOpen] = useState(false);
@@ -57,6 +60,11 @@ function NavList({ onClick }: { onClick?: () => void }) {
 
   const isDashboard = pathname.startsWith('/dashboard');
   const isReport = pathname.startsWith('/report');
+  const showReports = canAccessReports(user);
+  const showDataManagement = canAccessDataManagement(user);
+  const showDataBinding = canAccessDataBinding(user);
+  const showUserManagement = canManageUsers(user);
+  const readonly = isReadOnlyUser(user);
 
   // Auto-open overview sub when cost-comparison report is active
   useEffect(() => {
@@ -96,16 +104,18 @@ function NavList({ onClick }: { onClick?: () => void }) {
           >
             {dim}
           </NavLink>
-          <CollapsibleTrigger asChild>
-            <button
-              className="ml-0.5 rounded p-1 text-muted-foreground hover:bg-accent hover:text-foreground"
-              aria-label={isOpen ? '收起' : '展开'}
-            >
-              {isOpen ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
-            </button>
-          </CollapsibleTrigger>
+          {showReports && (
+            <CollapsibleTrigger asChild>
+              <button
+                className="ml-0.5 rounded p-1 text-muted-foreground hover:bg-accent hover:text-foreground"
+                aria-label={isOpen ? '收起' : '展开'}
+              >
+                {isOpen ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
+              </button>
+            </CollapsibleTrigger>
+          )}
         </div>
-        <CollapsibleContent>
+        {showReports && <CollapsibleContent>
           <div className="flex flex-col gap-0.5 pl-5 pr-1 pt-0.5">
             {reports.map((r) => (
               <NavLink
@@ -125,7 +135,7 @@ function NavList({ onClick }: { onClick?: () => void }) {
               </NavLink>
             ))}
           </div>
-        </CollapsibleContent>
+        </CollapsibleContent>}
       </Collapsible>
     );
   };
@@ -146,6 +156,7 @@ function NavList({ onClick }: { onClick?: () => void }) {
               <LayoutDashboard className="h-5 w-5" />
               数据看板
             </span>
+            {readonly && <span className="rounded bg-primary-foreground/20 px-1.5 py-0.5 text-[10px]">只读</span>}
             {dashboardOpen ? (
               <ChevronDown className="h-4 w-4 opacity-70" />
             ) : (
@@ -170,16 +181,18 @@ function NavList({ onClick }: { onClick?: () => void }) {
                 >
                   总览
                 </NavLink>
-                <CollapsibleTrigger asChild>
-                  <button
-                    className="ml-0.5 rounded p-1 text-muted-foreground hover:bg-accent hover:text-foreground"
-                    aria-label={overviewSubOpen ? '收起' : '展开'}
-                  >
-                    {overviewSubOpen ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
-                  </button>
-                </CollapsibleTrigger>
+                {showReports && (
+                  <CollapsibleTrigger asChild>
+                    <button
+                      className="ml-0.5 rounded p-1 text-muted-foreground hover:bg-accent hover:text-foreground"
+                      aria-label={overviewSubOpen ? '收起' : '展开'}
+                    >
+                      {overviewSubOpen ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
+                    </button>
+                  </CollapsibleTrigger>
+                )}
               </div>
-              <CollapsibleContent>
+              {showReports && <CollapsibleContent>
                 <div className="flex flex-col gap-0.5 pl-5 pr-1 pt-0.5">
                   <NavLink
                     to="/report/overview/cost-comparison"
@@ -194,7 +207,7 @@ function NavList({ onClick }: { onClick?: () => void }) {
                     人力成本对比表
                   </NavLink>
                 </div>
-              </CollapsibleContent>
+              </CollapsibleContent>}
             </Collapsible>
 
             {/* 总部 / 自营区域 / 线上 / 犀利工厂 with sub-reports */}
@@ -203,38 +216,58 @@ function NavList({ onClick }: { onClick?: () => void }) {
         </CollapsibleContent>
       </Collapsible>
 
-      <NavLink
-        to="/data"
-        onClick={onClick}
-        className={cn(
-          'flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors',
-          pathname.startsWith('/data') && !pathname.startsWith('/data-binding')
-            ? 'bg-primary text-primary-foreground'
-            : 'text-muted-foreground hover:bg-accent hover:text-foreground'
-        )}
-      >
-        <Table2 className="h-5 w-5" />
-        数据管理
-      </NavLink>
+      {showDataManagement && (
+        <NavLink
+          to="/data"
+          onClick={onClick}
+          className={cn(
+            'flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors',
+            pathname.startsWith('/data') && !pathname.startsWith('/data-binding')
+              ? 'bg-primary text-primary-foreground'
+              : 'text-muted-foreground hover:bg-accent hover:text-foreground'
+          )}
+        >
+          <Table2 className="h-5 w-5" />
+          数据管理
+        </NavLink>
+      )}
 
-      <NavLink
-        to="/data-binding"
-        onClick={onClick}
-        className={cn(
-          'flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors',
-          pathname.startsWith('/data-binding')
-            ? 'bg-primary text-primary-foreground'
-            : 'text-muted-foreground hover:bg-accent hover:text-foreground'
-        )}
-      >
-        <Link2 className="h-5 w-5" />
-        数据绑定配置
-      </NavLink>
+      {showDataBinding && (
+        <NavLink
+          to="/data-binding"
+          onClick={onClick}
+          className={cn(
+            'flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors',
+            pathname.startsWith('/data-binding')
+              ? 'bg-primary text-primary-foreground'
+              : 'text-muted-foreground hover:bg-accent hover:text-foreground'
+          )}
+        >
+          <Link2 className="h-5 w-5" />
+          数据绑定配置
+        </NavLink>
+      )}
+
+      {showUserManagement && (
+        <NavLink
+          to="/users"
+          onClick={onClick}
+          className={cn(
+            'flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors',
+            pathname.startsWith('/users')
+              ? 'bg-primary text-primary-foreground'
+              : 'text-muted-foreground hover:bg-accent hover:text-foreground'
+          )}
+        >
+          <Users className="h-5 w-5" />
+          账号管理
+        </NavLink>
+      )}
     </nav>
   );
 }
 
-export function Sidebar({ mobileOpen, setMobileOpen }: SidebarProps) {
+export function Sidebar({ mobileOpen, setMobileOpen, user }: SidebarProps) {
   return (
     <>
       {/* Desktop sidebar */}
@@ -243,7 +276,7 @@ export function Sidebar({ mobileOpen, setMobileOpen }: SidebarProps) {
           <span className="text-lg font-bold tracking-tight">薪酬管理系统</span>
         </div>
         <ScrollArea className="flex-1 py-4">
-          <NavList />
+          <NavList user={user} />
         </ScrollArea>
         <div className="border-t p-4 text-xs text-muted-foreground">
           数据模板：2026年5月薪酬分析
@@ -265,7 +298,7 @@ export function Sidebar({ mobileOpen, setMobileOpen }: SidebarProps) {
             </Button>
           </div>
           <ScrollArea className="flex-1 py-4">
-            <NavList onClick={() => setMobileOpen(false)} />
+            <NavList user={user} onClick={() => setMobileOpen(false)} />
           </ScrollArea>
         </SheetContent>
       </Sheet>

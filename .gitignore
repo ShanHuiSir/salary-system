@@ -47,6 +47,12 @@ node_modules/.tmp/
 # Test coverage
 coverage/
 
+# Local migration/export artifacts
+imported-data/
+releases/*.tar.gz
+releases/*.tar.gz.sha256
+scripts/import-salary-backup.mjs
+
 # Misc
 .cache/
 .temp/

@@ -9,7 +9,7 @@
     "lint": "eslint .",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
-    "deploy:static": "npm run build && echo 'dist/ 目录已生成，可部署到任意静态服务器'",
+    "deploy:static": "npm run build && echo 'dist/ 已生成，仅可用于本地静态预览；生产环境请执行 npm run deploy:docker'",
     "deploy:docker": "docker compose up -d --build",
     "deploy:frontend-docker": "docker build -t salary-dashboard:latest . && docker run -d --name salary-dashboard -p 80:80 --restart unless-stopped salary-dashboard:latest"
   },
@@ -48,6 +48,7 @@
     "embla-carousel-react": "^8.6.0",
     "input-otp": "^1.4.2",
     "lucide-react": "^0.562.0",
+    "mathjs": "^15.2.0",
     "next-themes": "^0.4.6",
     "react": "^19.2.0",
     "react-day-picker": "^9.13.0",

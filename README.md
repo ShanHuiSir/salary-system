@@ -56,93 +56,40 @@ npm run preview
 
 ## 部署方式
 
-### 🚀 方式一: Docker Compose 一键部署（推荐 — 含数据库 + 后端）
+### Docker Compose 完整部署（推荐）
+
+生产环境必须同时运行 PostgreSQL、后端 API 和前端 Nginx：
 
 ```bash
 # 1. 克隆项目
 git clone https://github.com/ShanHuiSir/salary-system.git
 cd salary-system
 
-# 2. 配置环境变量
+# 2. 配置生产环境变量（必须替换 DB/JWT/管理员密码示例值）
 cp .env.example .env
-nano .env   # 修改数据库密码和 JWT 密钥
+chmod 600 .env
+nano .env
 
-# 3. 一键启动（PostgreSQL + 后端API + 前端Nginx）
-docker compose up -d
+# 3. 启动 PostgreSQL + 后端 API + 前端 Nginx
+docker compose up -d --build
+docker compose ps
 
-# 4. 初始化数据库（首次启动）
-docker compose exec server npx prisma db push
-docker compose exec server npm run db:seed
-
-# 5. 访问
-# http://localhost   （或 http://<服务器IP>）
-# 账号: Mixmind / 密码: Mixmind
+# 4. 访问
+# http://<服务器IP或域名>
+# 初始管理员使用 .env 中的 ADMIN_USERNAME / ADMIN_PASSWORD
 ```
 
-详细部署文档：[docs/deploy-guide.md](docs/deploy-guide.md)
+后端仅在数据库中没有启用的超级管理员时创建初始管理员；正常重新部署不会覆盖已有账号密码。历史上通过 `prisma db push` 初始化的数据库，升级前须先按部署文档完成迁移 baseline。
 
-### 方式二: 仅前端部署（无后端，不推荐生产使用）
+详细说明见：[DEPLOY.md](DEPLOY.md) 和 [docs/deploy-guide.md](docs/deploy-guide.md)。
 
-### 方式一: 静态文件部署（推荐）
+### 本地静态预览
 
-构建后将 `dist/` 目录部署到任意静态文件服务器。
+`npm run build` 生成的 `dist/` 可用于本地 UI 预览；它不包含 PostgreSQL 和后端 API，因此不能作为独立生产部署。
 
 ```bash
 npm run build
-# 将 dist/ 目录复制到服务器
-```
-
-#### Nginx 配置示例
-
-```nginx
-server {
-    listen 80;
-    server_name your-domain.com;
-    root /usr/share/nginx/html;
-    index index.html;
-
-    # SPA 路由回退
-    location / {
-        try_files $uri $uri/ /index.html;
-    }
-
-    # 静态资源缓存
-    location ~* \.(js|css)$ {
-        expires 1y;
-        add_header Cache-Control "public, immutable";
-    }
-}
-```
-
-### 方式二: Docker 部署
-
-```bash
-# 构建镜像
-docker build -t salary-dashboard:latest .
-
-# 运行容器
-docker run -d \
-    --name salary-dashboard \
-    -p 80:80 \
-    --restart unless-stopped \
-    salary-dashboard:latest
-```
-
-访问 `http://localhost`
-
-### 方式三: 使用部署脚本
-
-```bash
-chmod +x deploy.sh
-
-# 本地构建
-./deploy.sh local
-
-# Docker 部署
-./deploy.sh docker
-
-# 静态文件部署（含说明）
-./deploy.sh static
+npm run preview
 ```
 
 ## 环境配置
@@ -223,7 +170,7 @@ salary-system/
     │   │   └── Sidebar.tsx
     │   └── ui/             # shadcn/ui 组件库 (40+ 组件)
     ├── contexts/
-    │   ├── DataContext.tsx         # 数据持久化 (localStorage)
+    │   ├── DataContext.tsx         # 数据持久化（服务器 API / 本地兼容）
     │   └── FieldConfigContext.tsx  # 字段配置持久化
     ├── data/
     │   └── mockData.ts             # 初始模拟数据
@@ -258,7 +205,7 @@ salary-system/
 - 自动分析洞察面板
 
 ### 数据管理
-- 7 种数据类型：月度总览、部门数据、成本构成、层级数据、区域人效、预算人力成本、人力成本组成
+- 10 种数据类型：月度总览、部门数据、成本构成、层级数据、区域人效、预算人力成本、人力成本组成、总部业务线、总部部门、平台数据
 - 列表管理 + 表单编辑
 - 批量导入（CSV 上传，支持 UTF-8/GBK 编码）
 - 字段自定义配置（增删改排序）
@@ -280,11 +227,11 @@ salary-system/
 ## 默认账号
 
 ```
-用户名: Mixmind
-密码:   Mixmind
+用户名: 由 `.env` 中的 `ADMIN_USERNAME` 设置（默认 `admin`）
+密码:   由 `.env` 中的 `ADMIN_PASSWORD` 设置（至少 12 位）
 ```
 
-> 当前版本使用后端认证服务，默认管理员会在后端启动时自动确保可用。
+> 当前版本使用后端认证服务。默认管理员只在首次缺少超级管理员时创建，后续部署不会覆盖账号管理中已设置的密码。
 
 ## 常用命令
 
@@ -300,8 +247,9 @@ salary-system/
 
 1. **路由模式**: 使用 `BrowserRouter`，服务器需配置 SPA fallback 到 `index.html`
 2. **base 路径**: `vite.config.ts` 中 `base: './'`，支持子目录部署
-3. **数据持久化**: 使用 localStorage，数据存储在浏览器本地，换浏览器/设备不共享
-4. **构建产物**: `dist/` 目录包含 `index.html` + `assets/` (JS/CSS)，可直接部署
+3. **数据持久化**: 生产环境使用服务器 PostgreSQL；不要执行 `docker compose down -v` 或删除 `pgdata` 数据卷
+4. **代码更新**: 页面、功能、配置改动需重新构建并同步到服务器，同事访问服务器地址才会看到新版
+5. **构建产物**: `dist/` 目录包含 `index.html` + `assets/` (JS/CSS)，可直接部署
 
 ## 浏览器兼容性
 

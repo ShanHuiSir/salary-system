@@ -188,18 +188,20 @@ model StoreRegion {
 }
 
 model BudgetLaborCost {
-  id              String   @id @default(uuid())
-  month           String
-  segment         String   // 总部|自营|线上|犀利工厂
-  center          String
-  department      String
-  businessLine    String   @map("business_line")
-  headcount       Int      @default(0)
-  laborCost       Float    @default(0) @map("labor_cost")
-  budgetLaborCost Float    @default(0) @map("budget_labor_cost")
-  createdBy       String?  @map("created_by")
-  createdAt       DateTime @default(now()) @map("created_at")
-  updatedAt       DateTime @updatedAt @map("updated_at")
+  id                        String   @id @default(uuid())
+  month                     String
+  segment                   String   // 总部|自营|线上|犀利工厂
+  center                    String
+  department                String
+  businessLine              String   @map("business_line")
+  headcount                 Int      @default(0)
+  laborCost                 Float    @default(0) @map("labor_cost")
+  budgetLaborCost           Float    @default(0) @map("budget_labor_cost")
+  storePerformance          Float    @default(0) @map("store_performance")
+  effectiveContributorCount Int      @default(0) @map("effective_contributor_count")
+  createdBy                 String?  @map("created_by")
+  createdAt                 DateTime @default(now()) @map("created_at")
+  updatedAt                 DateTime @updatedAt @map("updated_at")
 
   @@unique([month, segment, center, department, businessLine])
   @@index([month, segment])
@@ -207,20 +209,23 @@ model BudgetLaborCost {
 }
 
 model CostStructure {
-  id                      String   @id @default(uuid())
-  month                   String
-  segment                 String   // 总部|自营|线上|犀利工厂
-  attendanceSalary        Float    @default(0) @map("attendance_salary")
-  performanceBonus        Float    @default(0) @map("performance_bonus")
-  overtimePay             Float    @default(0) @map("overtime_pay")
-  annualLeaveAllowance    Float    @default(0) @map("annual_leave_allowance")
-  sickLeavePay            Float    @default(0) @map("sick_leave_pay")
-  maternityLeavePay       Float    @default(0) @map("maternity_leave_pay")
-  otherPayable            Float    @default(0) @map("other_payable")
-  employerSocialInsurance Float    @default(0) @map("employer_social_insurance")
-  createdBy               String?  @map("created_by")
-  createdAt               DateTime @default(now()) @map("created_at")
-  updatedAt               DateTime @updatedAt @map("updated_at")
+  id                       String   @id @default(uuid())
+  month                    String
+  segment                  String   // 总部|自营|线上|犀利工厂
+  attendanceSalary         Float    @default(0) @map("attendance_salary")
+  performanceBonus         Float    @default(0) @map("performance_bonus")
+  overtimePay              Float    @default(0) @map("overtime_pay")
+  annualLeaveAllowance     Float    @default(0) @map("annual_leave_allowance")
+  sickLeavePay             Float    @default(0) @map("sick_leave_pay")
+  maternityLeavePay        Float    @default(0) @map("maternity_leave_pay")
+  sickMaternityAnnualLeave Float    @default(0) @map("sick_maternity_annual_leave")
+  severance                Float    @default(0)
+  jjbcj                    Float    @default(0)
+  otherPayable             Float    @default(0) @map("other_payable")
+  employerSocialInsurance  Float    @default(0) @map("employer_social_insurance")
+  createdBy                String?  @map("created_by")
+  createdAt                DateTime @default(now()) @map("created_at")
+  updatedAt                DateTime @updatedAt @map("updated_at")
 
   @@unique([month, segment])
   @@index([month, segment])

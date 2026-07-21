@@ -1,4 +1,5 @@
 import { createContext, useContext, useState, useEffect, useCallback, type ReactNode } from 'react';
+import { toast } from 'sonner';
 import type {
   MonthlyOverview,
   DepartmentData,
@@ -27,6 +28,7 @@ import {
 import { normalizeSalaryData } from '@/utils/salaryCalculations';
 import {
   ALL_SERVER_DATA_TYPES,
+  DATA_TO_STORAGE_KEY,
   batchCreateDataItems,
   clearDataType,
   createDataItem,
@@ -35,32 +37,18 @@ import {
   loadAllSalaryData,
   updateDataItem,
   type PersistedSalaryData,
-  type ServerDataType,
 } from '@/lib/api';
 
 type PersistedData = PersistedSalaryData;
 
 const DATA_TYPE_REGISTRY: Record<DataType, keyof PersistedData> = {
-  overview: 'overviews',
-  department: 'departments',
-  composition: 'compositions',
-  position: 'positions',
-  store: 'stores',
-  budget: 'budgets',
-  costStructure: 'costStructures',
-};
-
-const SERVER_DATA_REGISTRY: Record<ServerDataType, keyof PersistedData> = {
-  overview: 'overviews',
-  department: 'departments',
-  composition: 'compositions',
-  position: 'positions',
-  store: 'stores',
-  budget: 'budgets',
-  costStructure: 'costStructures',
-  hqBusinessLine: 'hqBusinessLines',
-  hqDept: 'hqDepts',
-  platform: 'platforms',
+  overview: DATA_TO_STORAGE_KEY.overview,
+  department: DATA_TO_STORAGE_KEY.department,
+  composition: DATA_TO_STORAGE_KEY.composition,
+  position: DATA_TO_STORAGE_KEY.position,
+  store: DATA_TO_STORAGE_KEY.store,
+  budget: DATA_TO_STORAGE_KEY.budget,
+  costStructure: DATA_TO_STORAGE_KEY.costStructure,
 };
 
 const DATA_TYPE_CHINESE_LABELS: Record<keyof PersistedData, string> = {
@@ -160,7 +148,7 @@ async function clearAllServerData() {
 
 async function seedServerData(data: PersistedData) {
   for (const dataType of ALL_SERVER_DATA_TYPES) {
-    const key = SERVER_DATA_REGISTRY[dataType];
+    const key = DATA_TO_STORAGE_KEY[dataType];
     const items = data[key] as unknown[];
     if (items.length > 0) await batchCreateDataItems(dataType, items as never[]);
   }
@@ -201,7 +189,13 @@ export function DataProvider({ children }: { children: ReactNode }) {
 
   const batchAddItems = useCallback(async (type: DataType, items: unknown[]) => {
     if (items.length === 0) return;
-    await batchCreateDataItems(type, items as never[]);
+    const result = await batchCreateDataItems(type, items as never[]);
+    if (result.skipped > 0) {
+      const details = result.errors.slice(0, 3).map((error) => `第 ${error.index + 1} 行：${error.message}`).join('；');
+      toast.warning(`已导入 ${result.success} 条，跳过 ${result.skipped} 条`, { description: details || '请检查导入数据后重试' });
+    } else {
+      toast.success(`成功导入 ${result.success} 条数据`);
+    }
     const key = DATA_TYPE_REGISTRY[type];
     const latest = await listData(type);
     setData((prev) => normalizeSalaryData({ ...prev, [key]: latest }));
@@ -241,7 +235,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
     setData(EMPTY_DATA);
     setLoadedFromStorage(true);
 
-    const clearedTypes = ALL_SERVER_DATA_TYPES.map((dataType) => DATA_TYPE_CHINESE_LABELS[SERVER_DATA_REGISTRY[dataType]]);
+    const clearedTypes = ALL_SERVER_DATA_TYPES.map((dataType) => DATA_TYPE_CHINESE_LABELS[DATA_TO_STORAGE_KEY[dataType]]);
     const log: OperationLog = {
       id: `log-${Date.now()}`,
       timestamp: new Date().toISOString(),

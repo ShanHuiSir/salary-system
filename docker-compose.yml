@@ -7,8 +7,6 @@
 #   3. 访问 http://localhost
 # ============================================
 
-version: "3.8"
-
 services:
   # ===== PostgreSQL 数据库 =====
   postgres:
@@ -43,7 +41,7 @@ services:
       PORT: "3000"
       NODE_ENV: production
       CORS_ORIGIN: ${CORS_ORIGIN:-http://localhost}
-      ADMIN_USERNAME: ${ADMIN_USERNAME:-Mixmind}
+      ADMIN_USERNAME: ${ADMIN_USERNAME:-admin}
       ADMIN_PASSWORD: ${ADMIN_PASSWORD:?请先在 .env 中设置 ADMIN_PASSWORD}
     depends_on:
       postgres:

@@ -125,6 +125,8 @@ export interface BudgetLaborCostData {
   headcount: number;                             // 人数
   laborCost: number;                            // 人力成本(万)
   budgetLaborCost: number;                       // 预算人力成本(万)
+  storePerformance?: number;                    // 店铺业绩(万)
+  effectiveContributorCount?: number;           // 有效贡献人数
   // usageRate 为公式字段: laborCost / budgetLaborCost * 100
 }
 
@@ -139,6 +141,9 @@ export interface CostStructureData {
   annualLeaveAllowance: number; // 年假补贴(万)
   sickLeavePay: number;         // 病假工资(万)
   maternityLeavePay: number;    // 产假工资(万)
+  sickMaternityAnnualLeave?: number; // 病假/产假/年假工资(万)
+  severance?: number;           // 经济补偿金(万)
+  jjbcj?: number;               // 经济补偿金旧字段(万)
   otherPayable: number;         // 其他应发(万)
   employerSocialInsurance: number; // 单位社保公积金(万)
 }

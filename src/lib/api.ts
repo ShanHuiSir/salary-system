@@ -26,9 +26,37 @@ export interface AuthUser {
   username: string;
   displayName: string;
   role: string;
+  departmentScope?: string[];
 }
 
-interface AuthSession {
+export interface ManagedUser extends AuthUser {
+  email: string | null;
+  departmentScope: string[];
+  isActive: boolean;
+  lastLoginAt: string | null;
+  loginAttempts: number;
+  lockedUntil: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface UserRoleOption {
+  role: string;
+  label: string;
+}
+
+export interface UserInput {
+  username?: string;
+  password?: string;
+  displayName?: string;
+  email?: string | null;
+  role?: string;
+  departmentScope?: string[];
+  isActive?: boolean;
+  lockedUntil?: string | null;
+}
+
+export interface AuthSession {
   accessToken: string;
   refreshToken: string;
   user: AuthUser;
@@ -74,11 +102,11 @@ type SalaryArrayMap = {
   platform: PlatformData[];
 };
 
-type SalaryItemMap = {
+export type SalaryItemMap = {
   [K in keyof SalaryArrayMap]: SalaryArrayMap[K][number];
 };
 
-const DATA_TO_STORAGE_KEY: Record<ServerDataType, keyof PersistedSalaryData> = {
+export const DATA_TO_STORAGE_KEY: Record<ServerDataType, keyof PersistedSalaryData> = {
   overview: 'overviews',
   department: 'departments',
   composition: 'compositions',
@@ -115,19 +143,50 @@ export function clearAuthSession() {
   localStorage.removeItem(AUTH_STORAGE_KEY);
 }
 
-async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
+let refreshInFlight: Promise<AuthSession | null> | null = null;
+
+async function refreshAccessToken(): Promise<AuthSession | null> {
+  const session = getStoredSession();
+  if (!session?.refreshToken) return null;
+
+  if (!refreshInFlight) {
+    refreshInFlight = (async () => {
+      const response = await fetch(`${API_BASE_URL}/auth/refresh`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ refreshToken: session.refreshToken }),
+      });
+      const payload = await response.json().catch(() => null) as ApiResponse<{ accessToken: string; expiresIn: number }> | null;
+      if (!response.ok || !payload || payload.code !== 0 || !payload.data?.accessToken) return null;
+
+      // refresh token 轮换由服务端实现时也可在此兼容新的 refreshToken；当前接口只返回 access token。
+      const nextSession: AuthSession = { ...session, accessToken: payload.data.accessToken };
+      saveAuthSession(nextSession);
+      return nextSession;
+    })().finally(() => {
+      refreshInFlight = null;
+    });
+  }
+
+  return refreshInFlight;
+}
+
+async function request<T>(path: string, options: RequestInit = {}, allowRefresh = true): Promise<T> {
   const session = getStoredSession();
   const headers = new Headers(options.headers);
 
   if (!(options.body instanceof FormData) && !headers.has('Content-Type')) {
     headers.set('Content-Type', 'application/json');
   }
-  if (session?.accessToken) {
-    headers.set('Authorization', `Bearer ${session.accessToken}`);
-  }
+  if (session?.accessToken) headers.set('Authorization', `Bearer ${session.accessToken}`);
 
   const response = await fetch(`${API_BASE_URL}${path}`, { ...options, headers });
   const payload = await response.json().catch(() => null) as ApiResponse<T> | null;
+
+  if ((!response.ok || !payload || payload.code !== 0) && response.status === 401 && allowRefresh && path !== '/auth/refresh') {
+    const refreshedSession = await refreshAccessToken();
+    if (refreshedSession) return request<T>(path, options, false);
+  }
 
   if (!response.ok || !payload || payload.code !== 0) {
     const message = payload?.message || `请求失败：${response.status}`;
@@ -141,7 +200,7 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
 export async function loginWithPassword(username: string, password: string): Promise<AuthUser> {
   const session = await request<LoginResponse>('/auth/login', {
     method: 'POST',
-    body: JSON.stringify({ username, password }),
+    body: JSON.stringify({ username: username.trim(), password }),
   });
   saveAuthSession(session);
   return session.user;
@@ -159,6 +218,45 @@ export async function getCurrentUser(): Promise<AuthUser> {
   return request<AuthUser>('/auth/me');
 }
 
+export async function listUserRoles(): Promise<UserRoleOption[]> {
+  return request<UserRoleOption[]>('/users/roles');
+}
+
+export async function listUsers(params: { search?: string; role?: string; isActive?: boolean; page?: number; pageSize?: number } = {}) {
+  const query = new URLSearchParams();
+  if (params.search) query.set('search', params.search);
+  if (params.role) query.set('role', params.role);
+  if (params.isActive !== undefined) query.set('isActive', String(params.isActive));
+  query.set('page', String(params.page ?? 1));
+  query.set('pageSize', String(params.pageSize ?? 100));
+  return request<ListResponse<ManagedUser>>(`/users?${query.toString()}`);
+}
+
+export async function createUser(input: UserInput): Promise<ManagedUser> {
+  return request<ManagedUser>('/users', {
+    method: 'POST',
+    body: JSON.stringify(input),
+  });
+}
+
+export async function updateUser(id: string, input: UserInput): Promise<ManagedUser> {
+  return request<ManagedUser>(`/users/${id}`, {
+    method: 'PUT',
+    body: JSON.stringify(input),
+  });
+}
+
+export async function resetUserPassword(id: string, password: string) {
+  return request<null>(`/users/${id}/password`, {
+    method: 'POST',
+    body: JSON.stringify({ password }),
+  });
+}
+
+export async function disableUser(id: string): Promise<ManagedUser> {
+  return request<ManagedUser>(`/users/${id}`, { method: 'DELETE' });
+}
+
 export async function listData<T extends ServerDataType>(dataType: T): Promise<SalaryItemMap[T][]> {
   const firstPage = await request<ListResponse<SalaryItemMap[T]>>(`/data/${dataType}?page=1&pageSize=200`);
   if (firstPage.totalPages <= 1) return firstPage.list;
@@ -173,28 +271,7 @@ export async function listData<T extends ServerDataType>(dataType: T): Promise<S
 }
 
 export async function loadAllSalaryData(): Promise<PersistedSalaryData> {
-  const entries = await Promise.all(
-    ALL_SERVER_DATA_TYPES.map(async (dataType) => [dataType, await listData(dataType)] as const)
-  );
-
-  const data: PersistedSalaryData = {
-    overviews: [],
-    departments: [],
-    compositions: [],
-    positions: [],
-    stores: [],
-    hqBusinessLines: [],
-    hqDepts: [],
-    platforms: [],
-    budgets: [],
-    costStructures: [],
-  };
-
-  for (const [dataType, list] of entries) {
-    (data[DATA_TO_STORAGE_KEY[dataType]] as unknown[]) = list;
-  }
-
-  return data;
+  return request<PersistedSalaryData>('/dashboard/summary');
 }
 
 export async function createDataItem<T extends DataType>(dataType: T, item: SalaryItemMap[T]): Promise<SalaryItemMap[T]> {

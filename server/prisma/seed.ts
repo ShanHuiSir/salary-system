@@ -12,13 +12,18 @@ const prisma = new PrismaClient();
 async function main() {
   console.log('🌱 开始导入初始数据...');
 
-  // 1. 创建管理员
-  const hash = await bcrypt.hash('Mixmind', 12);
+  // 1. 创建管理员（仅允许通过环境变量显式提供密码，避免仓库内置可用凭据）
+  const adminUsername = process.env.ADMIN_USERNAME?.trim() || 'admin';
+  const adminPassword = process.env.ADMIN_PASSWORD;
+  if (!adminPassword || adminPassword === 'change-me-now' || adminPassword.length < 12) {
+    throw new Error('请设置长度至少 12 位且非占位符的 ADMIN_PASSWORD 后再执行 db:seed');
+  }
+  const hash = await bcrypt.hash(adminPassword, 12);
   await prisma.user.upsert({
-    where: { username: 'Mixmind' },
-    update: { passwordHash: hash, role: 'super_admin', isActive: true, loginAttempts: 0, lockedUntil: null },
+    where: { username: adminUsername },
+    update: { role: 'super_admin', isActive: true, loginAttempts: 0, lockedUntil: null },
     create: {
-      username: 'Mixmind',
+      username: adminUsername,
       passwordHash: hash,
       displayName: '系统管理员',
       role: 'super_admin',

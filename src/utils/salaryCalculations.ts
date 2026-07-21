@@ -1,31 +1,9 @@
-import type {
-  BudgetLaborCostData,
-  CostComposition,
-  CostStructureData,
-  DataType,
-  DepartmentData,
-  HqBusinessLineData,
-  HqDeptData,
-  MonthlyOverview,
-  PlatformData,
-  PositionLevelData,
-  StoreRegionData,
-} from '@/types';
+import type { DataType, DepartmentData, MonthlyOverview } from '@/types';
+import type { PersistedSalaryData } from '@/lib/api';
 import { toNumber, isBlank, roundTo, safeDivide, safePercent } from '@/utils/numberUtils';
 import { addMonths } from '@/utils/dateUtils';
 
-export interface PersistedSalaryData {
-  overviews: MonthlyOverview[];
-  departments: DepartmentData[];
-  compositions: CostComposition[];
-  positions: PositionLevelData[];
-  stores: StoreRegionData[];
-  hqBusinessLines: HqBusinessLineData[];
-  hqDepts: HqDeptData[];
-  platforms: PlatformData[];
-  budgets: BudgetLaborCostData[];
-  costStructures: CostStructureData[];
-}
+export type { PersistedSalaryData } from '@/lib/api';
 
 const REVENUE_COMPONENT_KEYS = [
   'selfOperatedRevenue',

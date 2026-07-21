@@ -1,6 +1,6 @@
 import { Router, Request, Response } from 'express';
 import { prisma } from '../utils/prisma.js';
-import { authenticate } from '../middleware/auth.js';
+import { authenticate, DATA_ADMIN_ROLES, USER_ADMIN_ROLES, requireRole } from '../middleware/auth.js';
 import { success, fail, serverError } from '../utils/response.js';
 import { auditLog } from '../middleware/auditLog.js';
 
@@ -26,7 +26,7 @@ stateRouter.get('/:key', async (req: Request, res: Response) => {
   }
 });
 
-stateRouter.put('/:key', auditLog('update_state', 'client_states'), async (req: Request, res: Response) => {
+stateRouter.put('/:key', requireRole(...USER_ADMIN_ROLES), auditLog('update_state', 'client_states'), async (req: Request, res: Response) => {
   try {
     const key = getStateKey(req);
     const value = req.body?.value;
@@ -44,7 +44,7 @@ stateRouter.put('/:key', auditLog('update_state', 'client_states'), async (req: 
   }
 });
 
-stateRouter.delete('/:key', auditLog('delete_state', 'client_states'), async (req: Request, res: Response) => {
+stateRouter.delete('/:key', requireRole(...DATA_ADMIN_ROLES), auditLog('delete_state', 'client_states'), async (req: Request, res: Response) => {
   try {
     await prisma.clientState.delete({ where: { key: getStateKey(req) } }).catch(() => null);
     return success(res, null, '删除成功');

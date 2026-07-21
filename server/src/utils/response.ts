@@ -23,6 +23,6 @@ export function fail(res: Response, code: number, message: string, status = 400)
 
 export function serverError(res: Response, error: unknown) {
   console.error('[Server Error]', error);
-  const message = error instanceof Error ? error.message : '服务器内部错误';
+  const message = process.env.NODE_ENV === 'production' ? '服务器内部错误' : (error instanceof Error ? error.message : '服务器内部错误');
   return res.status(500).json({ code: 5000, message });
 }
