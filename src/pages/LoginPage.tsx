@@ -5,6 +5,8 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { CompanyLogo } from '@/components/brand/CompanyLogo';
+import logoWatermark from '@/assets/brand/logo-watermark.png';
 import { toast } from 'sonner';
 
 interface LoginPageProps {
@@ -30,11 +32,23 @@ export function LoginPage({ onLogin }: LoginPageProps) {
   };
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-muted/40 p-4">
-      <Card className="w-full max-w-md">
-        <CardHeader className="space-y-1 text-center">
-          <CardTitle className="text-2xl font-bold">薪酬数据管理系统</CardTitle>
-          <CardDescription>请使用管理员账号登录</CardDescription>
+    <div className="relative flex min-h-screen items-center justify-center overflow-hidden bg-[#f7f4ef] p-4">
+      <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_left,rgba(67,39,21,0.12),transparent_34%),linear-gradient(135deg,rgba(255,255,255,0.86),rgba(247,244,239,0.76))]" />
+      <img
+        src={logoWatermark}
+        alt=""
+        aria-hidden="true"
+        className="pointer-events-none absolute -right-80 top-10 hidden w-[78rem] max-w-none opacity-60 mix-blend-multiply lg:block"
+      />
+      <Card className="relative w-full max-w-md border-white/70 bg-white/92 shadow-2xl shadow-stone-900/10 backdrop-blur">
+        <CardHeader className="space-y-4 text-center">
+          <div className="mx-auto rounded-2xl border border-stone-200/80 bg-white px-5 py-4 shadow-sm">
+            <CompanyLogo className="w-64 max-w-full" />
+          </div>
+          <div className="space-y-1">
+            <CardTitle className="text-2xl font-bold tracking-tight text-stone-950">薪酬数据管理系统</CardTitle>
+            <CardDescription>请使用管理员账号登录</CardDescription>
+          </div>
         </CardHeader>
         <CardContent>
           <form onSubmit={handleSubmit} className="space-y-4">

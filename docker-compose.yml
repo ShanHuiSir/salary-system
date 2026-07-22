@@ -19,11 +19,6 @@ services:
       POSTGRES_PASSWORD: ${DB_PASSWORD:?请先在 .env 中设置 DB_PASSWORD}
     volumes:
       - pgdata:/var/lib/postgresql/data
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-salary_admin} -d salary_db"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
 
   # ===== 后端 API 服务 =====
   server:
@@ -41,16 +36,10 @@ services:
       PORT: "3000"
       NODE_ENV: production
       CORS_ORIGIN: ${CORS_ORIGIN:-http://localhost}
-      ADMIN_USERNAME: ${ADMIN_USERNAME:-admin}
+      ADMIN_USERNAME: ${ADMIN_USERNAME:-Mixmind}
       ADMIN_PASSWORD: ${ADMIN_PASSWORD:?请先在 .env 中设置 ADMIN_PASSWORD}
     depends_on:
-      postgres:
-        condition: service_healthy
-    healthcheck:
-      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:3000/api/health || exit 1"]
-      interval: 10s
-      timeout: 5s
-      retries: 10
+      - postgres
 
   # ===== 前端 (Nginx 静态服务) =====
   client:
@@ -63,8 +52,7 @@ services:
       # 内网部署建议在 .env 中设置 CLIENT_BIND 为服务器内网 IP，例如 192.168.1.10
       - "${CLIENT_BIND:-0.0.0.0}:${CLIENT_PORT:-80}:80"
     depends_on:
-      server:
-        condition: service_healthy
+      - server
 
 volumes:
   pgdata:

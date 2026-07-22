@@ -312,9 +312,9 @@ export function DataListPage({ user }: { user: AuthUser }) {
   };
 
   return (
-    <div className="space-y-6">
+    <div className="min-w-0 space-y-6">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <div>
+        <div className="min-w-0">
           <h2 className="text-2xl font-bold tracking-tight">数据管理</h2>
           <p className="text-sm text-muted-foreground">管理薪酬分析相关的月度、部门、职级、门店数据</p>
         </div>
@@ -443,11 +443,11 @@ export function DataListPage({ user }: { user: AuthUser }) {
         </TabsList>
       </Tabs>
 
-      <Card>
+      <Card className="min-w-0">
         <CardHeader className="pb-4">
           <CardTitle className="text-base">{dataTypeLabels[activeType]}</CardTitle>
         </CardHeader>
-        <CardContent className="space-y-4">
+        <CardContent className="min-w-0 space-y-4">
           <div className="relative max-w-sm">
             <Search className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
             <Input
@@ -457,7 +457,7 @@ export function DataListPage({ user }: { user: AuthUser }) {
               className="pl-9"
             />
           </div>
-          <div className="max-h-[calc(100vh-300px)] max-w-full overflow-auto rounded-md border">
+          <div className="max-h-[calc(100vh-300px)] w-full max-w-full overflow-auto rounded-md border">
             {filtered.length > 0 ? (
               <Table className="min-w-[960px]">
                 <TableHeader className="sticky top-0 z-10 bg-card">

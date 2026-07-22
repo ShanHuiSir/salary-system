@@ -1,12 +1,13 @@
 import { useState, useEffect } from 'react';
 import { NavLink, useLocation } from 'react-router-dom';
-import { LayoutDashboard, Table2, X, ChevronDown, ChevronRight, Link2, Users } from 'lucide-react';
+import { LayoutDashboard, Table2, X, ChevronDown, ChevronRight, Users } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Sheet, SheetContent } from '@/components/ui/sheet';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
+import { CompanyLogo } from '@/components/brand/CompanyLogo';
 import { cn } from '@/lib/utils';
-import { canAccessDataBinding, canAccessDataManagement, canAccessReports, canManageUsers, isReadOnlyUser } from '@/lib/permissions';
+import { canAccessDataManagement, canAccessReports, canManageUsers, isReadOnlyUser } from '@/lib/permissions';
 import type { AuthUser } from '@/lib/api';
 
 interface SidebarProps {
@@ -31,8 +32,8 @@ const SUB_REPORTS: Record<'总部' | '自营区域' | '线上' | '犀利工厂',
   ],
   自营区域: [
     { label: '固浮比', path: '/report/self/fixed-variable' },
-    { label: '业务线', path: '/report/self/business-line' },
-    { label: '部门', path: '/report/self/department' },
+    { label: '区域', path: '/report/self/business-line' },
+    { label: '店铺', path: '/report/self/department' },
     { label: '区域人效', path: '/report/self/region' },
   ],
   线上: [
@@ -62,7 +63,6 @@ function NavList({ user, onClick }: { user: AuthUser; onClick?: () => void }) {
   const isReport = pathname.startsWith('/report');
   const showReports = canAccessReports(user);
   const showDataManagement = canAccessDataManagement(user);
-  const showDataBinding = canAccessDataBinding(user);
   const showUserManagement = canManageUsers(user);
   const readonly = isReadOnlyUser(user);
 
@@ -222,29 +222,13 @@ function NavList({ user, onClick }: { user: AuthUser; onClick?: () => void }) {
           onClick={onClick}
           className={cn(
             'flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors',
-            pathname.startsWith('/data') && !pathname.startsWith('/data-binding')
+            pathname.startsWith('/data')
               ? 'bg-primary text-primary-foreground'
               : 'text-muted-foreground hover:bg-accent hover:text-foreground'
           )}
         >
           <Table2 className="h-5 w-5" />
           数据管理
-        </NavLink>
-      )}
-
-      {showDataBinding && (
-        <NavLink
-          to="/data-binding"
-          onClick={onClick}
-          className={cn(
-            'flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors',
-            pathname.startsWith('/data-binding')
-              ? 'bg-primary text-primary-foreground'
-              : 'text-muted-foreground hover:bg-accent hover:text-foreground'
-          )}
-        >
-          <Link2 className="h-5 w-5" />
-          数据绑定配置
         </NavLink>
       )}
 
@@ -272,8 +256,11 @@ export function Sidebar({ mobileOpen, setMobileOpen, user }: SidebarProps) {
     <>
       {/* Desktop sidebar */}
       <aside className="hidden lg:flex w-64 flex-col border-r bg-card">
-        <div className="flex h-16 items-center border-b px-6">
-          <span className="text-lg font-bold tracking-tight">薪酬管理系统</span>
+        <div className="flex h-16 items-center border-b px-5">
+          <div className="space-y-0.5">
+            <CompanyLogo className="w-40" />
+            <div className="text-[11px] font-medium tracking-[0.2em] text-muted-foreground">薪酬管理系统</div>
+          </div>
         </div>
         <ScrollArea className="flex-1 py-4">
           <NavList user={user} />
@@ -286,8 +273,11 @@ export function Sidebar({ mobileOpen, setMobileOpen, user }: SidebarProps) {
       {/* Mobile sidebar */}
       <Sheet open={mobileOpen} onOpenChange={setMobileOpen}>
         <SheetContent side="left" className="w-64 p-0">
-          <div className="flex h-16 items-center justify-between border-b px-6">
-            <span className="text-lg font-bold tracking-tight">薪酬管理系统</span>
+          <div className="flex h-16 items-center justify-between border-b px-5">
+            <div className="space-y-0.5">
+              <CompanyLogo className="w-36" />
+              <div className="text-[11px] font-medium tracking-[0.18em] text-muted-foreground">薪酬管理系统</div>
+            </div>
             <Button
               variant="ghost"
               size="icon"

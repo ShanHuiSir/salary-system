@@ -2,7 +2,7 @@ import { createContext, useContext, useState, useEffect, useCallback, useRef, ty
 import type { DataType } from '@/types';
 import type { FieldDef, FieldConfigs } from '@/types/fieldConfig';
 import { defaultFieldConfigs } from '@/types/fieldConfig';
-import { getCanonicalFieldLabel } from '@/utils/fieldStandards';
+import { getCanonicalFieldLabel, isDeprecatedFieldKey } from '@/utils/fieldStandards';
 import { loadClientState, saveClientState } from '@/lib/api';
 
 const STORAGE_KEY = 'salary-admin-field-configs';
@@ -10,12 +10,23 @@ const STORAGE_KEY = 'salary-admin-field-configs';
 function mergeFieldConfigs(configs: Partial<FieldConfigs>): FieldConfigs {
   const merged: FieldConfigs = { ...defaultFieldConfigs };
   for (const dt of Object.keys(defaultFieldConfigs) as DataType[]) {
-    const userFields = configs[dt] ?? [];
-    const systemFieldsFromDefault = defaultFieldConfigs[dt].filter((f) => f.system);
-    const userNonSystemFields = userFields
-      .filter((f) => !f.system)
+    const userFieldsByKey = new Map((configs[dt] ?? []).map((field) => [field.key, field]));
+    const defaultFields = defaultFieldConfigs[dt].map((defaultField) => {
+      const userField = userFieldsByKey.get(defaultField.key);
+      if (!userField) return defaultField;
+      return {
+        ...defaultField,
+        ...userField,
+        system: defaultField.system,
+        required: isDeprecatedFieldKey(defaultField.key) ? false : userField.required,
+        visibleInList: isDeprecatedFieldKey(defaultField.key) ? false : userField.visibleInList,
+        label: getCanonicalFieldLabel(defaultField.key, userField.label),
+      };
+    });
+    const customFields = (configs[dt] ?? [])
+      .filter((field) => !defaultFieldConfigs[dt].some((defaultField) => defaultField.key === field.key))
       .map((field) => ({ ...field, label: getCanonicalFieldLabel(field.key, field.label) }));
-    merged[dt] = [...systemFieldsFromDefault, ...userNonSystemFields];
+    merged[dt] = [...defaultFields, ...customFields].sort((a, b) => a.order - b.order);
   }
   return merged;
 }

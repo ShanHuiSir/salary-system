@@ -1,6 +1,6 @@
 import { useMemo, useState, useEffect } from 'react';
-import { useSearchParams, useNavigate } from 'react-router-dom';
-import { LayoutGrid, Link2 } from 'lucide-react';
+import { useSearchParams } from 'react-router-dom';
+import { LayoutGrid } from 'lucide-react';
 import {
   LineChart,
   Line,
@@ -33,7 +33,7 @@ import { DashboardCustomizer } from '@/components/dashboard/DashboardCustomizer'
 import { useDashboardLayout } from '@/components/dashboard/useDashboardLayout';
 import { DataPathTracer } from '@/components/dashboard/DataPathTracer';
 import type { AuthUser } from '@/lib/api';
-import { canAccessDataBinding, canCustomizeDashboardLayout, isReadOnlyUser } from '@/lib/permissions';
+import { canCustomizeDashboardLayout, isReadOnlyUser } from '@/lib/permissions';
 import type { DataSourceMap } from '@/utils/dataPathEngine';
 import { useData } from '@/contexts/DataContext';
 import type { CostStructureData, DepartmentData, MonthlyOverview } from '@/types';
@@ -189,9 +189,7 @@ export function DashboardPage({ user }: { user: AuthUser }) {
   const layout = useDashboardLayout();
   const readonly = isReadOnlyUser(user);
   const canCustomizeLayout = canCustomizeDashboardLayout(user);
-  const showDataBinding = canAccessDataBinding(user);
   const [customizerOpen, setCustomizerOpen] = useState(false);
-  const navigate = useNavigate();
   const isBlockVisible = (id: string) => layout.isVisible(id);
   const blockStyle = (id: string) => ({ order: layout.getOrderIndex(id) + 1 });
   const blockGridClass = (id: string) => {
@@ -302,6 +300,12 @@ export function DashboardPage({ user }: { user: AuthUser }) {
     [overviews]
   );
 
+  const currentCalendarYear = String(new Date().getFullYear());
+  const currentYearOverviews = useMemo(
+    () => sortedOverviews.filter((overview) => overview.month.startsWith(`${currentCalendarYear}-`)),
+    [currentCalendarYear, sortedOverviews]
+  );
+
   // 当前月份的overview
   const currentOverview = useMemo(
     () => overviews.find((o) => o.month === selectedMonth),
@@ -332,6 +336,11 @@ export function DashboardPage({ user }: { user: AuthUser }) {
       .filter((d) => d.department === deptKey)
       .sort((a, b) => a.month.localeCompare(b.month));
   }, [departments, deptKey]);
+
+  const currentYearDeptSeries = useMemo(
+    () => deptSeries.filter((d) => d.month.startsWith(`${currentCalendarYear}-`)),
+    [currentCalendarYear, deptSeries]
+  );
 
   const currentDept = useMemo(
     () => departments.find((d) => d.month === selectedMonth && d.department === deptKey),
@@ -372,24 +381,20 @@ export function DashboardPage({ user }: { user: AuthUser }) {
 
   // 累计趋势数据：年初到选定月份的每月累计值
   const cumulativeTrendData = useMemo(() => {
-    if (!selectedMonth) return [];
-    const [year] = selectedMonth.split('-');
-    const monthsInYear = overviews
-      .filter((o) => o.month.startsWith(year) && o.month <= selectedMonth)
-      .sort((a, b) => a.month.localeCompare(b.month));
+    const monthsInYear = currentYearOverviews;
 
-    let cumRevenue = 0;
-    let cumLaborCost = 0;
-    return monthsInYear.map((o) => {
-      cumRevenue += o.totalRevenue;
-      cumLaborCost += o.totalLaborCost;
-      return {
+    return monthsInYear.reduce((acc, o) => {
+      const previous = acc[acc.length - 1];
+      const cumRevenue = (previous?.累计业绩 ?? 0) + o.totalRevenue;
+      const cumLaborCost = (previous?.累计人力成本 ?? 0) + o.totalLaborCost;
+      acc.push({
         month: o.month,
         累计业绩: cumRevenue,
         累计人力成本: cumLaborCost,
-      };
-    });
-  }, [overviews, selectedMonth]);
+      });
+      return acc;
+    }, [] as { month: string; 累计业绩: number; 累计人力成本: number }[]);
+  }, [currentYearOverviews]);
 
   // ===== 共用数据 =====
   const compositionChartData = useMemo(() => {
@@ -416,12 +421,12 @@ export function DashboardPage({ user }: { user: AuthUser }) {
   }, [positions, selectedMonth, deptKey, viewMode]);
 
   const trendData = useMemo(() => {
-    return deptSeries.map((d) => ({
+    return currentYearDeptSeries.map((d) => ({
       month: d.month,
       人力成本: d.laborCost,
       人均营收: d.perCapitaRevenue,
     }));
-  }, [deptSeries]);
+  }, [currentYearDeptSeries]);
 
   // Overview KPI trends (当期)
   const overviewKpiTrends = useMemo(() => {
@@ -784,8 +789,8 @@ export function DashboardPage({ user }: { user: AuthUser }) {
       <div className="min-w-0 flex-1">
     <div className="grid grid-cols-12 gap-6">
       {/* Header with month selector and view mode tabs */}
-      <div className="col-span-12 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between" style={{ order: 0 }}>
-        <div>
+      <div className="col-span-12 flex min-w-0 flex-col gap-4 sm:flex-row sm:items-center sm:justify-between" style={{ order: 0 }}>
+        <div className="min-w-0">
           <h2 className="text-2xl font-bold tracking-tight">数据看板</h2>
           <p className="text-sm text-muted-foreground">
             当前维度：{dimension} · {viewMode === 'cumulative' ? cumulativeLabel : `数据月份：${monthLabel}`}
@@ -826,12 +831,6 @@ export function DashboardPage({ user }: { user: AuthUser }) {
             <Button variant="outline" size="sm" onClick={() => setCustomizerOpen((open) => !open)}>
               <LayoutGrid className="mr-2 h-4 w-4" />
               {customizerOpen ? '收起优化侧栏' : '页面优化侧栏'}
-            </Button>
-          )}
-          {showDataBinding && (
-            <Button variant="outline" size="sm" onClick={() => navigate('/data-binding')}>
-              <Link2 className="mr-2 h-4 w-4" />
-              数据绑定配置
             </Button>
           )}
         </div>
@@ -1341,9 +1340,8 @@ export function DashboardPage({ user }: { user: AuthUser }) {
                       <Bar dataKey="考勤工资" stackId="a" fill={CHART_COLORS[0]} />
                       <Bar dataKey="效益奖金" stackId="a" fill={CHART_COLORS[1]} />
                       <Bar dataKey="加班费" stackId="a" fill={CHART_COLORS[2]} />
-                      <Bar dataKey="年假补贴" stackId="a" fill={CHART_COLORS[3]} />
-                      <Bar dataKey="病假工资" stackId="a" fill="#ec4899" />
-                      <Bar dataKey="产假工资" stackId="a" fill="#f97316" />
+                      <Bar dataKey="病假/产假/年假工资" stackId="a" fill={CHART_COLORS[3]} />
+                      <Bar dataKey="经济补偿金" stackId="a" fill="#ec4899" />
                       <Bar dataKey="其他应发" stackId="a" fill="#14b8a6" />
                       <Bar dataKey="单位社保公积金" stackId="a" fill="#6366f1" radius={[4, 4, 0, 0]} />
                     </BarChart>
@@ -1370,8 +1368,8 @@ export function DashboardPage({ user }: { user: AuthUser }) {
             <CardHeader>
               <CardTitle className="text-base">
                 {isOverview
-                  ? `${selectedYear}年累计业绩与人力成本趋势`
-                  : `${dimension} · 累计人力成本趋势`}
+                  ? `${currentCalendarYear}年累计业绩与人力成本趋势`
+                  : `${dimension} · ${currentCalendarYear}年累计人力成本趋势`}
               </CardTitle>
             </CardHeader>
             <CardContent>
@@ -1426,12 +1424,12 @@ export function DashboardPage({ user }: { user: AuthUser }) {
         ) : isOverview ? (
           <Card>
             <CardHeader>
-              <CardTitle className="text-base">总业绩与总人力成本趋势</CardTitle>
+              <CardTitle className="text-base">总业绩与总人力成本趋势（{currentCalendarYear}年）</CardTitle>
             </CardHeader>
             <CardContent>
               <div className="h-72">
                 <ResponsiveContainer width="100%" height="100%">
-                  <LineChart data={sortedOverviews}>
+                  <LineChart data={currentYearOverviews}>
                     <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
                     <XAxis dataKey="month" tick={{ fontSize: 12 }} />
                     <YAxis tick={{ fontSize: 12 }} tickFormatter={(v) => `${v}万`} />
@@ -1463,7 +1461,7 @@ export function DashboardPage({ user }: { user: AuthUser }) {
         ) : (
           <Card>
             <CardHeader>
-              <CardTitle className="text-base">{dimension} · 人力成本变化趋势</CardTitle>
+              <CardTitle className="text-base">{dimension} · 人力成本变化趋势（{currentCalendarYear}年）</CardTitle>
             </CardHeader>
             <CardContent>
               <div className="h-72">
@@ -1615,72 +1613,6 @@ export function DashboardPage({ user }: { user: AuthUser }) {
           </Card>
         )}
 
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">
-              {viewMode === 'cumulative'
-                ? `${selectedYear}年累计业绩与人力成本趋势`
-                : '全公司 · 业绩趋势与对比'}
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="h-72">
-              <ResponsiveContainer width="100%" height="100%">
-                {viewMode === 'cumulative' ? (
-                  <LineChart data={cumulativeTrendData}>
-                    <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
-                    <XAxis dataKey="month" tick={{ fontSize: 12 }} />
-                    <YAxis tick={{ fontSize: 12 }} tickFormatter={(v) => `${v}万`} />
-                    <Tooltip formatter={(v, name) => [`${v}万`, String(name)]} />
-                    <Legend />
-                    <Line
-                      type="monotone"
-                      dataKey="累计业绩"
-                      stroke={CHART_COLORS[1]}
-                      strokeWidth={2}
-                      dot={{ r: 4 }}
-                      activeDot={{ r: 6 }}
-                    />
-                    <Line
-                      type="monotone"
-                      dataKey="累计人力成本"
-                      stroke={CHART_COLORS[0]}
-                      strokeWidth={2}
-                      dot={{ r: 4 }}
-                      activeDot={{ r: 6 }}
-                    />
-                  </LineChart>
-                ) : (
-                  <LineChart data={sortedOverviews}>
-                    <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
-                    <XAxis dataKey="month" tick={{ fontSize: 12 }} />
-                    <YAxis tick={{ fontSize: 12 }} tickFormatter={(v) => `${v}万`} />
-                    <Tooltip formatter={(v, name) => [`${v}万`, String(name)]} />
-                    <Legend />
-                    <Line
-                      type="monotone"
-                      dataKey="totalRevenue"
-                      name="总业绩"
-                      stroke={CHART_COLORS[1]}
-                      strokeWidth={2}
-                      dot={{ r: 4 }}
-                      activeDot={{ r: 6 }}
-                    />
-                    <Line
-                      type="monotone"
-                      dataKey="totalLaborCost"
-                      name="总人力成本"
-                      stroke={CHART_COLORS[0]}
-                      strokeWidth={2}
-                      dot={{ r: 4 }}
-                      activeDot={{ r: 6 }}
-                    />
-                  </LineChart>
-                )}
-              </ResponsiveContainer>
-            </div>
-          </CardContent>
-        </Card>
       </div>
       )}
 

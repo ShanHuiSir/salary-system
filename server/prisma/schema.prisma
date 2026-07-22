@@ -198,7 +198,7 @@ model BudgetLaborCost {
   laborCost                 Float    @default(0) @map("labor_cost")
   budgetLaborCost           Float    @default(0) @map("budget_labor_cost")
   storePerformance          Float    @default(0) @map("store_performance")
-  effectiveContributorCount Int      @default(0) @map("effective_contributor_count")
+  effectiveContributorCount Float    @default(0) @map("effective_contributor_count")
   createdBy                 String?  @map("created_by")
   createdAt                 DateTime @default(now()) @map("created_at")
   updatedAt                 DateTime @updatedAt @map("updated_at")

@@ -32,19 +32,32 @@ type ModelConfig = {
   model: PrismaDelegateName;
   tableName: string;
   searchFields: string[];
+  uniqueFields: string[];
+};
+
+type DataDelegate = {
+  findMany: (args?: unknown) => Promise<unknown[]>;
+  findUnique: (args: unknown) => Promise<Record<string, unknown> | null>;
+  count: (args?: unknown) => Promise<number>;
+  create: (args: unknown) => Promise<Record<string, unknown>>;
+  createMany: (args: unknown) => Promise<{ count: number }>;
+  upsert: (args: unknown) => Promise<Record<string, unknown>>;
+  update: (args: unknown) => Promise<Record<string, unknown>>;
+  delete: (args: unknown) => Promise<unknown>;
+  deleteMany: (args?: unknown) => Promise<{ count: number }>;
 };
 
 const MODEL_MAP: Record<ServerDataType, ModelConfig> = {
-  overview:       { model: 'monthlyOverview', tableName: 'monthly_overviews', searchFields: ['month'] },
-  department:     { model: 'department',      tableName: 'departments', searchFields: ['month', 'department'] },
-  composition:    { model: 'costComposition', tableName: 'cost_compositions', searchFields: ['month', 'department'] },
-  position:       { model: 'positionLevel',   tableName: 'position_levels', searchFields: ['month', 'department', 'level'] },
-  store:          { model: 'storeRegion',     tableName: 'store_regions', searchFields: ['month', 'region'] },
-  budget:         { model: 'budgetLaborCost', tableName: 'budget_labor_costs', searchFields: ['month', 'segment', 'center', 'department', 'businessLine'] },
-  costStructure:  { model: 'costStructure',   tableName: 'cost_structures', searchFields: ['month', 'segment'] },
-  hqBusinessLine: { model: 'hqBusinessLine',  tableName: 'hq_business_lines', searchFields: ['month', 'businessLine'] },
-  hqDept:         { model: 'hqDept',          tableName: 'hq_depts', searchFields: ['month', 'department'] },
-  platform:       { model: 'platform',        tableName: 'platforms', searchFields: ['month', 'platform'] },
+  overview:       { model: 'monthlyOverview', tableName: 'monthly_overviews', searchFields: ['month'], uniqueFields: ['month'] },
+  department:     { model: 'department',      tableName: 'departments', searchFields: ['month', 'department'], uniqueFields: ['month', 'department'] },
+  composition:    { model: 'costComposition', tableName: 'cost_compositions', searchFields: ['month', 'department'], uniqueFields: ['month', 'department'] },
+  position:       { model: 'positionLevel',   tableName: 'position_levels', searchFields: ['month', 'department', 'level'], uniqueFields: ['month', 'department', 'level'] },
+  store:          { model: 'storeRegion',     tableName: 'store_regions', searchFields: ['month', 'region'], uniqueFields: ['month', 'region'] },
+  budget:         { model: 'budgetLaborCost', tableName: 'budget_labor_costs', searchFields: ['month', 'segment', 'center', 'department', 'businessLine'], uniqueFields: ['month', 'segment', 'center', 'department', 'businessLine'] },
+  costStructure:  { model: 'costStructure',   tableName: 'cost_structures', searchFields: ['month', 'segment'], uniqueFields: ['month', 'segment'] },
+  hqBusinessLine: { model: 'hqBusinessLine',  tableName: 'hq_business_lines', searchFields: ['month', 'businessLine'], uniqueFields: ['month', 'businessLine'] },
+  hqDept:         { model: 'hqDept',          tableName: 'hq_depts', searchFields: ['month', 'department'], uniqueFields: ['month', 'department'] },
+  platform:       { model: 'platform',        tableName: 'platforms', searchFields: ['month', 'platform'], uniqueFields: ['month', 'platform'] },
 };
 
 function getModel(dataType: string): ModelConfig {
@@ -56,17 +69,12 @@ function isServerDataType(dataType: string): dataType is ServerDataType {
   return dataType in MODEL_MAP;
 }
 
-function getDelegate(model: PrismaDelegateName) {
-  return prisma[model] as unknown as {
-    findMany: (args?: unknown) => Promise<unknown[]>;
-    findUnique: (args: unknown) => Promise<Record<string, unknown> | null>;
-    count: (args?: unknown) => Promise<number>;
-    create: (args: unknown) => Promise<Record<string, unknown>>;
-    createMany: (args: unknown) => Promise<{ count: number }>;
-    update: (args: unknown) => Promise<Record<string, unknown>>;
-    delete: (args: unknown) => Promise<unknown>;
-    deleteMany: (args?: unknown) => Promise<{ count: number }>;
-  };
+function getDelegate(model: PrismaDelegateName): DataDelegate {
+  return prisma[model] as unknown as DataDelegate;
+}
+
+function getDelegateFrom(client: unknown, model: PrismaDelegateName): DataDelegate {
+  return (client as Record<PrismaDelegateName, DataDelegate>)[model];
 }
 
 function getRouteParam(req: Request, name: string): string {
@@ -109,6 +117,23 @@ function parseRecord(dataType: ServerDataType, input: unknown): { data?: Record<
   const parsed = validateDataRecord(dataType, input);
   if (!parsed.success) return { message: formatZodError(parsed.error) };
   return { data: parsed.data as Record<string, unknown> };
+}
+
+function buildUniqueWhere(config: ModelConfig, item: Record<string, unknown>) {
+  if (config.uniqueFields.length === 1) {
+    const field = config.uniqueFields[0];
+    return { [field]: item[field] };
+  }
+
+  const compoundKey = config.uniqueFields.join('_');
+  return {
+    [compoundKey]: Object.fromEntries(config.uniqueFields.map((field) => [field, item[field]])),
+  };
+}
+
+function withoutCreateOnlyFields(item: Record<string, unknown>) {
+  const { createdBy: _createdBy, createdAt: _createdAt, updatedAt: _updatedAt, id: _id, ...updatable } = item;
+  return updatable;
 }
 
 async function normalizeAfterWrite(dataType: ServerDataType, months: Iterable<string>) {
@@ -209,17 +234,25 @@ dataRouter.post('/:dataType/batch', requireDataWriteAccess, auditLog('import', g
       return success(res, { total: items.length, success: 0, skipped: errors.length, errors }, '没有可导入的有效数据');
     }
 
-    // createMany 将导入从逐条 SQL 降为单次批量插入；skipInvalid=false 时由数据库事务确保全有或全无。
-    const { model } = getModel(dataType);
-    const result = await getDelegate(model).createMany({ data: validItems });
+    const config = getModel(dataType);
+    await prisma.$transaction(async (tx) => {
+      const delegate = getDelegateFrom(tx, config.model);
+      for (const item of validItems) {
+        await delegate.upsert({
+          where: buildUniqueWhere(config, item),
+          create: item,
+          update: withoutCreateOnlyFields(item),
+        });
+      }
+    });
     const months = validItems.map((item) => item.month).filter((value): value is string => typeof value === 'string');
     await normalizeAfterWrite(dataType, months);
     return success(res, {
       total: items.length,
-      success: result.count,
+      success: validItems.length,
       skipped: errors.length,
       errors,
-    }, `成功 ${result.count} 条，跳过 ${errors.length} 条`);
+    }, `成功导入/更新 ${validItems.length} 条，跳过 ${errors.length} 条`);
   } catch (error) {
     return serverError(res, error);
   }

@@ -111,7 +111,7 @@ export const defaultFieldConfigs: FieldConfigs = {
     { key: 'headcount', label: '人数', type: 'number', required: true, visibleInList: true, system: false, order: 6 },
     { key: 'laborCost', label: '人力成本(万)', type: 'number', required: true, suffix: '万', visibleInList: true, system: false, order: 7 },
     { key: 'budgetLaborCost', label: '预算人力成本(万)', type: 'number', required: true, suffix: '万', visibleInList: true, system: false, order: 8 },
-    { key: 'storePerformance', label: '店铺业绩(万)', type: 'number', required: false, suffix: '万', visibleInList: true, system: false, order: 9 },
+    { key: 'storePerformance', label: '销售目标(万)', type: 'number', required: false, suffix: '万', visibleInList: true, system: false, order: 9 },
     { key: 'effectiveContributorCount', label: '有效贡献人数', type: 'number', required: false, visibleInList: true, system: false, order: 10 },
     {
       key: 'storeEfficiency',
@@ -126,7 +126,7 @@ export const defaultFieldConfigs: FieldConfigs = {
         expression: 'storePerformance / headcount',
         dependsOn: ['storePerformance', 'headcount'],
         precision: 2,
-        description: '店铺业绩 / 人数',
+        description: '销售目标 / 人数',
       },
     },
     {
@@ -142,7 +142,7 @@ export const defaultFieldConfigs: FieldConfigs = {
         expression: 'laborCost / storePerformance * 100',
         dependsOn: ['laborCost', 'storePerformance'],
         precision: 1,
-        description: '人力成本 / 店铺业绩 × 100',
+        description: '人力成本 / 销售目标 × 100',
       },
     },
     {

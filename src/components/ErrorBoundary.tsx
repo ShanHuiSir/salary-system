@@ -2,6 +2,7 @@ import { Component, type ErrorInfo, type ReactNode } from 'react';
 import { AlertTriangle, RefreshCw, RotateCcw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
+import { isChunkLoadError, reloadAppForUpdatedAssets } from '@/utils/appReload';
 
 interface ErrorBoundaryProps {
   children: ReactNode;
@@ -31,9 +32,18 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
     console.error('[ErrorBoundary] 捕获渲染错误:', error);
     console.error('[ErrorBoundary] 组件堆栈:', errorInfo.componentStack);
     this.setState({ errorInfo });
+
+    if (isChunkLoadError(error)) {
+      window.setTimeout(() => reloadAppForUpdatedAssets(), 0);
+    }
   }
 
   handleRetry = (): void => {
+    if (isChunkLoadError(this.state.error)) {
+      reloadAppForUpdatedAssets();
+      return;
+    }
+
     if (this.props.hardReset) {
       window.location.reload();
     } else {
@@ -65,6 +75,7 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
       const errorMessage = this.state.error?.message ?? '未知错误';
       const stack = this.state.error?.stack ?? '';
       const componentStack = this.state.errorInfo?.componentStack ?? '';
+      const isAppUpdateError = isChunkLoadError(this.state.error);
 
       return (
         <div className="flex min-h-[400px] items-center justify-center p-8">
@@ -73,9 +84,11 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
               <div className="mx-auto mb-3 flex h-14 w-14 items-center justify-center rounded-full bg-destructive/10">
                 <AlertTriangle className="h-7 w-7 text-destructive" />
               </div>
-              <CardTitle className="text-xl">页面渲染异常</CardTitle>
+              <CardTitle className="text-xl">{isAppUpdateError ? '页面资源已更新' : '页面渲染异常'}</CardTitle>
               <CardDescription>
-                页面组件遇到了意外错误，已自动捕获。数据不会丢失，您可以通过以下方式恢复。
+                {isAppUpdateError
+                  ? '检测到浏览器仍在使用旧版页面资源，系统会自动刷新获取最新版本。'
+                  : '页面组件遇到了意外错误，已自动捕获。数据不会丢失，您可以通过以下方式恢复。'}
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-3">
@@ -98,7 +111,8 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
               <div className="rounded-md bg-amber-50 p-3 text-sm text-amber-800 dark:bg-amber-950/30 dark:text-amber-200">
                 <p className="font-medium">数据安全说明</p>
                 <p className="mt-1 text-xs">
-                  业务数据存储在服务器数据库中。点击"尝试恢复"通常可重新渲染页面；
+                  业务数据存储在服务器数据库中。
+                  {isAppUpdateError ? '刷新只会重新获取前端页面资源，不会影响业务数据。' : '点击"尝试恢复"通常可重新渲染页面；'}
                   如反复出现，请截图上方的错误信息并提供给开发。
                 </p>
               </div>
@@ -110,7 +124,7 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
                 onClick={this.handleRetry}
               >
                 <RefreshCw className="mr-2 h-4 w-4" />
-                尝试恢复
+                {isAppUpdateError ? '刷新获取最新版本' : '尝试恢复'}
               </Button>
               <Button
                 variant="outline"

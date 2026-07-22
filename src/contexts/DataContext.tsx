@@ -117,7 +117,7 @@ interface DataContextValue {
   syncError: string | null;
 
   addItem: (type: DataType, item: unknown) => Promise<void>;
-  batchAddItems: (type: DataType, items: unknown[]) => Promise<void>;
+  batchAddItems: (type: DataType, items: unknown[]) => Promise<{ total: number; success: number; skipped: number; errors: { index: number; message: string }[] }>;
   updateItem: (type: DataType, id: string, item: unknown) => Promise<void>;
   deleteItem: (type: DataType, id: string) => Promise<void>;
   getItem: (type: DataType, id: string) => unknown | undefined;
@@ -188,17 +188,18 @@ export function DataProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const batchAddItems = useCallback(async (type: DataType, items: unknown[]) => {
-    if (items.length === 0) return;
+    if (items.length === 0) return { total: 0, success: 0, skipped: 0, errors: [] };
     const result = await batchCreateDataItems(type, items as never[]);
     if (result.skipped > 0) {
       const details = result.errors.slice(0, 3).map((error) => `第 ${error.index + 1} 行：${error.message}`).join('；');
-      toast.warning(`已导入 ${result.success} 条，跳过 ${result.skipped} 条`, { description: details || '请检查导入数据后重试' });
+      toast.warning(`已导入/更新 ${result.success} 条，跳过 ${result.skipped} 条`, { description: details || '请检查导入数据后重试' });
     } else {
-      toast.success(`成功导入 ${result.success} 条数据`);
+      toast.success(`成功导入/更新 ${result.success} 条数据`);
     }
     const key = DATA_TYPE_REGISTRY[type];
     const latest = await listData(type);
     setData((prev) => normalizeSalaryData({ ...prev, [key]: latest }));
+    return result;
   }, []);
 
   const updateItem = useCallback(async (type: DataType, id: string, item: unknown) => {

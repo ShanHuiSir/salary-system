@@ -65,6 +65,8 @@ const fieldTypeLabels: Record<FieldType, string> = {
   formula: '公式计算',
 };
 
+const dataTypeOrder: DataType[] = ['overview', 'department', 'composition', 'position', 'store', 'budget', 'costStructure'];
+
 interface FieldConfigDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -147,6 +149,7 @@ export function FieldConfigDialog({ open, onOpenChange }: FieldConfigDialogProps
       }
     }
 
+    const maxOrder = currentFields.reduce((max, field) => Math.max(max, field.order), 0);
     const field: FieldDef = {
       key: newKey.trim(),
       label: newLabel.trim(),
@@ -155,7 +158,7 @@ export function FieldConfigDialog({ open, onOpenChange }: FieldConfigDialogProps
       suffix: newSuffix.trim() || undefined,
       visibleInList: newVisibleInList,
       system: false,
-      order: 999,
+      order: maxOrder + 1,
     };
 
     if (newType === 'enum' && newEnumValues.trim()) {
@@ -195,16 +198,19 @@ export function FieldConfigDialog({ open, onOpenChange }: FieldConfigDialogProps
     updateField(activeType, key, { visibleInList: visible });
   }, [activeType, updateField]);
 
-  const handleMoveUp = useCallback((index: number) => {
-    if (index <= 0) return;
-    reorderFields(activeType, index, index - 1);
-  }, [activeType, reorderFields]);
+  const handleMoveField = useCallback((key: string, direction: 'up' | 'down') => {
+    const allFields = [...getFields(activeType)].sort((a, b) => a.order - b.order);
+    const userFields = getUserFields(allFields);
+    const currentUserIndex = userFields.findIndex((field) => field.key === key);
+    const targetUserIndex = direction === 'up' ? currentUserIndex - 1 : currentUserIndex + 1;
+    const targetField = userFields[targetUserIndex];
+    if (currentUserIndex < 0 || !targetField) return;
 
-  const handleMoveDown = useCallback((index: number) => {
-    const fields = getUserFields(getFields(activeType));
-    if (index >= fields.length - 1) return;
-    reorderFields(activeType, index, index + 1);
-  }, [activeType, reorderFields, getFields]);
+    const fromIndex = allFields.findIndex((field) => field.key === key);
+    const toIndex = allFields.findIndex((field) => field.key === targetField.key);
+    if (fromIndex < 0 || toIndex < 0) return;
+    reorderFields(activeType, fromIndex, toIndex);
+  }, [activeType, getFields, reorderFields]);
 
   const handleToggleRequired = useCallback((key: string, required: boolean) => {
     updateField(activeType, key, { required });
@@ -306,26 +312,26 @@ export function FieldConfigDialog({ open, onOpenChange }: FieldConfigDialogProps
   }, [editType, editFormulaExpr, currentFields]);
 
   const renderFieldList = (dataType: DataType) => {
-    const allFields = getFields(dataType);
+    const allFields = [...getFields(dataType)].sort((a, b) => a.order - b.order);
     const systemFields = allFields.filter((f) => f.system);
     const userFields = getUserFields(allFields);
 
     return (
-      <div className="space-y-4">
+      <div className="min-w-0 space-y-4 pr-3">
         {/* 系统字段（不可删除） */}
         {systemFields.length > 0 && (
           <div className="space-y-1">
             <p className="text-xs font-medium text-muted-foreground mb-2">系统字段（不可删除）</p>
             {systemFields.map((f) => (
-              <div key={f.key} className="flex items-center gap-2 rounded-md border bg-muted/30 px-3 py-2">
-                <GripVertical className="h-4 w-4 text-muted-foreground/30" />
-                <Badge variant="secondary" className="text-xs px-1.5">系统</Badge>
-                <span className="font-medium text-sm">{f.label}</span>
+              <div key={f.key} className="flex min-w-0 flex-wrap items-center gap-2 rounded-md border bg-muted/30 px-3 py-2">
+                <GripVertical className="h-4 w-4 shrink-0 text-muted-foreground/30" />
+                <Badge variant="secondary" className="shrink-0 text-xs px-1.5">系统</Badge>
+                <span className="min-w-0 break-words text-sm font-medium">{f.label}</span>
                 <span className="text-xs text-muted-foreground">({f.key})</span>
-                <Badge variant="outline" className="text-xs">{fieldTypeLabels[f.type]}</Badge>
-                {f.required && <Badge variant="default" className="text-xs">必填</Badge>}
-                {f.visibleInList && <Eye className="h-3.5 w-3.5 text-muted-foreground" />}
-                {!f.visibleInList && <EyeOff className="h-3.5 w-3.5 text-muted-foreground/50" />}
+                <Badge variant="outline" className="shrink-0 text-xs">{fieldTypeLabels[f.type]}</Badge>
+                {f.required && <Badge variant="default" className="shrink-0 text-xs">必填</Badge>}
+                {f.visibleInList && <Eye className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />}
+                {!f.visibleInList && <EyeOff className="h-3.5 w-3.5 shrink-0 text-muted-foreground/50" />}
               </div>
             ))}
           </div>
@@ -347,17 +353,18 @@ export function FieldConfigDialog({ open, onOpenChange }: FieldConfigDialogProps
             </div>
           ) : (
             userFields.map((f, idx) => (
-              <div key={f.key} className={`flex items-center gap-2 rounded-md border px-3 py-2 transition-colors ${f.type === 'formula' ? 'bg-blue-50/50 dark:bg-blue-950/20 border-blue-200/50 dark:border-blue-800/50' : 'hover:bg-muted/30'}`}>
+              <div key={f.key} className={`flex min-w-0 flex-col gap-2 rounded-md border px-3 py-2 transition-colors sm:flex-row sm:items-center ${f.type === 'formula' ? 'bg-blue-50/50 dark:bg-blue-950/20 border-blue-200/50 dark:border-blue-800/50' : 'hover:bg-muted/30'}`}>
                 {/* 排序按钮 */}
-                <div className="flex flex-col">
-                  <Button variant="ghost" size="icon" className="h-4 w-4" onClick={() => handleMoveUp(idx)} disabled={idx === 0}>
+                <div className="flex shrink-0 items-center gap-1 sm:flex-col sm:gap-0">
+                  <Button variant="ghost" size="icon" className="h-6 w-6 sm:h-4 sm:w-4" onClick={() => handleMoveField(f.key, 'up')} disabled={idx === 0} title="上移">
                     <ChevronUp className="h-3 w-3" />
                   </Button>
-                  <Button variant="ghost" size="icon" className="h-4 w-4" onClick={() => handleMoveDown(idx)} disabled={idx === userFields.length - 1}>
+                  <Button variant="ghost" size="icon" className="h-6 w-6 sm:h-4 sm:w-4" onClick={() => handleMoveField(f.key, 'down')} disabled={idx === userFields.length - 1} title="下移">
                     <ChevronDown className="h-3 w-3" />
                   </Button>
                 </div>
 
+                <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
                 {/* 必填切换（公式字段不需要） */}
                 {f.type !== 'formula' && (
                   <Checkbox
@@ -371,24 +378,27 @@ export function FieldConfigDialog({ open, onOpenChange }: FieldConfigDialogProps
                 )}
 
                 {/* 字段信息 */}
-                <span className="font-medium text-sm flex-1">{f.label}</span>
+                <span className="min-w-0 break-words text-sm font-medium">{f.label}</span>
                 <span className="text-xs text-muted-foreground">({f.key})</span>
                 <Badge variant={f.type === 'formula' ? 'default' : 'outline'} className={`text-xs ${f.type === 'formula' ? 'bg-blue-500 text-white' : ''}`}>
                   {fieldTypeLabels[f.type]}
                 </Badge>
                 {f.suffix && <Badge variant="outline" className="text-xs">{f.suffix}</Badge>}
                 {f.type === 'enum' && f.enumValues && (
-                  <span className="text-xs text-muted-foreground max-w-[120px] truncate">
+                  <span className="max-w-[180px] truncate text-xs text-muted-foreground">
                     [{f.enumValues.join('/')}]
                   </span>
                 )}
 
                 {/* 公式字段显示表达式摘要 */}
                 {f.type === 'formula' && f.formula && (
-                  <span className="text-xs text-blue-600 dark:text-blue-400 max-w-[160px] truncate" title={f.formula.expression}>
+                  <span className="max-w-[220px] truncate text-xs text-blue-600 dark:text-blue-400" title={f.formula.expression}>
                     = {f.formula.expression}
                   </span>
                 )}
+                </div>
+
+                <div className="flex shrink-0 items-center justify-end gap-1">
 
                 {/* 列表可见切换 */}
                 <Button
@@ -434,6 +444,7 @@ export function FieldConfigDialog({ open, onOpenChange }: FieldConfigDialogProps
                 >
                   <Trash2 className="h-3.5 w-3.5" />
                 </Button>
+                </div>
               </div>
             ))
           )}
@@ -450,7 +461,7 @@ export function FieldConfigDialog({ open, onOpenChange }: FieldConfigDialogProps
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-2xl max-h-[80vh]">
+      <DialogContent className="flex max-h-[85dvh] w-[calc(100vw-2rem)] max-w-5xl min-w-0 flex-col overflow-hidden">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Settings2 className="h-5 w-5" />
@@ -461,25 +472,27 @@ export function FieldConfigDialog({ open, onOpenChange }: FieldConfigDialogProps
           </DialogDescription>
         </DialogHeader>
 
-        <Tabs value={activeType} onValueChange={(v) => setActiveType(v as DataType)}>
-          <TabsList className="flex flex-wrap h-auto">
-            {(Object.keys(dataTypeLabels) as DataType[]).map((key) => (
-              <TabsTrigger key={key} value={key}>
+        <Tabs value={activeType} onValueChange={(v) => setActiveType(v as DataType)} className="min-h-0 min-w-0 flex-1">
+          <div className="w-full overflow-x-auto pb-1">
+            <TabsList className="grid h-auto min-w-[840px] w-full grid-cols-7">
+            {dataTypeOrder.map((key) => (
+              <TabsTrigger key={key} value={key} className="px-2 text-xs lg:text-sm">
                 {dataTypeLabels[key]}
               </TabsTrigger>
             ))}
-          </TabsList>
+            </TabsList>
+          </div>
 
-          {(Object.keys(dataTypeLabels) as DataType[]).map((key) => (
-            <TabsContent key={key} value={key} className="mt-4">
-              <ScrollArea className="h-[350px]">
+          {dataTypeOrder.map((key) => (
+            <TabsContent key={key} value={key} className="mt-3 min-h-0 flex-1">
+              <ScrollArea className="h-[min(52vh,440px)] pr-1">
                 {renderFieldList(key)}
               </ScrollArea>
             </TabsContent>
           ))}
         </Tabs>
 
-        <DialogFooter className="flex items-center justify-between sm:justify-between">
+        <DialogFooter className="shrink-0 border-t pt-4 sm:justify-between">
           <AlertDialog open={resetOpen} onOpenChange={setResetOpen}>
             <AlertDialogTrigger asChild>
               <Button variant="outline" size="sm">

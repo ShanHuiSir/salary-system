@@ -76,7 +76,13 @@ export function ReportPage() {
   const [reportSearchParams, setReportSearchParams] = useSearchParams();
 
   const scopeLabel = scope ? SCOPE_LABELS[scope] : '';
-  const typeLabel = type ? TYPE_LABELS[type] : '';
+  const typeLabel = scope === 'self' && type === 'business-line'
+    ? '区域'
+    : scope === 'self' && type === 'department'
+    ? '店铺'
+    : type
+    ? TYPE_LABELS[type]
+    : '';
 
   // Get latest month from department data
   const latestMonth = useMemo(() => {
@@ -98,6 +104,7 @@ export function ReportPage() {
   // Report-level URL params for month and view mode (used by business-line & department reports)
   const reportMonth = reportSearchParams.get('month') || '';
   const reportViewMode = (reportSearchParams.get('view') === 'cumulative' ? 'cumulative' : 'current') as 'current' | 'cumulative';
+  const currentCalendarYear = String(new Date().getFullYear());
 
   const handleReportMonthChange = (month: string) => {
     const params = new URLSearchParams(reportSearchParams);
@@ -121,23 +128,25 @@ export function ReportPage() {
     const monthComps = compositions
       .filter((c) => c.department === deptKey)
       .sort((a, b) => b.month.localeCompare(a.month));
+    const chartMonthComps = monthComps.filter((c) => c.month.startsWith(`${currentCalendarYear}-`));
 
     const latestComp = monthComps[0];
+    const latestChartComp = chartMonthComps[0];
 
     const totalLaborCost = (c: typeof monthComps[0]) =>
       c.fixedIncome + c.floatingIncome + c.socialInsurance + c.severance + c.outsourcing;
 
-    const pieData = latestComp
+    const pieData = latestChartComp
       ? [
-          { name: '固定收入', value: latestComp.fixedIncome },
-          { name: '浮动收入', value: latestComp.floatingIncome },
-          { name: '社保公积金', value: latestComp.socialInsurance },
-          { name: '经济补偿金', value: latestComp.severance },
-          { name: '外包费用', value: latestComp.outsourcing },
+          { name: '固定收入', value: latestChartComp.fixedIncome },
+          { name: '浮动收入', value: latestChartComp.floatingIncome },
+          { name: '社保公积金', value: latestChartComp.socialInsurance },
+          { name: '经济补偿金', value: latestChartComp.severance },
+          { name: '外包费用', value: latestChartComp.outsourcing },
         ].filter((d) => d.value > 0)
       : [];
 
-    const trendData = monthComps.slice().reverse().map((c) => ({
+    const trendData = chartMonthComps.slice().reverse().map((c) => ({
       month: c.month,
       固定收入: c.fixedIncome,
       浮动收入: c.floatingIncome,
@@ -163,7 +172,7 @@ export function ReportPage() {
 
         <div className="grid gap-4 lg:grid-cols-2">
           <Card>
-            <CardHeader><CardTitle className="text-base">成本构成（最新月份）</CardTitle></CardHeader>
+            <CardHeader><CardTitle className="text-base">成本构成（{currentCalendarYear}年最新月份）</CardTitle></CardHeader>
             <CardContent>
               <div className="h-72">
                 {pieData.length > 0 ? (
@@ -181,7 +190,7 @@ export function ReportPage() {
             </CardContent>
           </Card>
           <Card>
-            <CardHeader><CardTitle className="text-base">人力成本月度趋势</CardTitle></CardHeader>
+            <CardHeader><CardTitle className="text-base">人力成本月度趋势（{currentCalendarYear}年）</CardTitle></CardHeader>
             <CardContent>
               <div className="h-72">
                 {trendData.length > 0 ? (
@@ -250,7 +259,8 @@ export function ReportPage() {
         {/* 总部-各业务线固浮比 */}
         {scope === 'hq' && (() => {
           const blLatest = hqBusinessLines.filter((d) => d.month === (latestComp?.month ?? ''));
-          const blChartData = blLatest.map((d) => ({
+          const blChartLatest = hqBusinessLines.filter((d) => d.month === (latestChartComp?.month ?? ''));
+          const blChartData = blChartLatest.map((d) => ({
             name: d.businessLine,
             固定收入: d.fixedSalary,
             浮动收入: d.variableSalary,
@@ -262,7 +272,7 @@ export function ReportPage() {
             <>
               <div className="grid gap-4 lg:grid-cols-2">
                 <Card>
-                  <CardHeader><CardTitle className="text-base">各业务线固浮比对比（{latestComp?.month ?? '--'}）</CardTitle></CardHeader>
+                  <CardHeader><CardTitle className="text-base">各业务线固浮比对比（{latestChartComp?.month ?? `${currentCalendarYear}年`}）</CardTitle></CardHeader>
                   <CardContent>
                     <div className="h-72">
                       {blChartData.length > 0 ? (
@@ -283,7 +293,7 @@ export function ReportPage() {
                   </CardContent>
                 </Card>
                 <Card>
-                  <CardHeader><CardTitle className="text-base">各业务线固浮比占比（{latestComp?.month ?? '--'}）</CardTitle></CardHeader>
+                  <CardHeader><CardTitle className="text-base">各业务线固浮比占比（{latestChartComp?.month ?? `${currentCalendarYear}年`}）</CardTitle></CardHeader>
                   <CardContent>
                     <div className="h-72">
                       {blChartData.length > 0 ? (
@@ -368,6 +378,7 @@ export function ReportPage() {
   // ========== 业务线 (all scopes, using budget data) ==========
   if (type === 'business-line') {
     const segmentKey = DEPT_MAP[scope];
+    const lineLabel = scope === 'self' ? '区域' : '业务线';
     const scopeBudgets = budgets.filter((b) => b.segment === segmentKey);
 
     // Available months from budget data
@@ -523,7 +534,7 @@ export function ReportPage() {
         <Card>
           <CardHeader>
             <CardTitle className="text-base">
-              {reportViewMode === 'cumulative' ? '各业务线人力成本与预算对比（累计）' : '各业务线人力成本与预算对比'}
+              {reportViewMode === 'cumulative' ? `各${lineLabel}人力成本与预算对比（累计）` : `各${lineLabel}人力成本与预算对比`}
             </CardTitle>
           </CardHeader>
           <CardContent>
@@ -547,13 +558,13 @@ export function ReportPage() {
 
         {/* Detail table */}
         <Card>
-          <CardHeader><CardTitle className="text-base">业务线明细</CardTitle></CardHeader>
+          <CardHeader><CardTitle className="text-base">{lineLabel}明细</CardTitle></CardHeader>
           <CardContent>
             <div className="overflow-auto rounded-md border max-h-[500px]">
               <Table>
                 <TableHeader className="sticky top-0 z-10 bg-card">
                   <TableRow>
-                    <TableHead>业务线</TableHead>
+                    <TableHead>{lineLabel}</TableHead>
                     <TableHead className="text-right">人数</TableHead>
                     <TableHead className="text-right">人力成本(万)</TableHead>
                     <TableHead className="text-right">预算人力成本(万)</TableHead>
@@ -622,6 +633,9 @@ export function ReportPage() {
   // ========== 部门 (all scopes, using budget data) ==========
   if (type === 'department') {
     const segmentKey = DEPT_MAP[scope];
+    const deptLabel = scope === 'self' ? '店铺' : '部门';
+    const lineLabel = scope === 'self' ? '区域' : '业务线';
+    const groupLabel = scope === 'self' ? '区域' : '中心';
     const scopeBudgets = budgets.filter((b) => b.segment === segmentKey);
 
     // Available months
@@ -722,20 +736,20 @@ export function ReportPage() {
 
         {/* Detail table (unified, sticky header, center group rows) */}
         <Card>
-          <CardHeader><CardTitle className="text-base">部门明细（按中心分组）</CardTitle></CardHeader>
+          <CardHeader><CardTitle className="text-base">{deptLabel}明细（按{groupLabel}分组）</CardTitle></CardHeader>
           <CardContent>
             {groupedByCenter.length > 0 ? (
-              <div className="overflow-auto rounded-md border max-h-[500px]">
-                <Table>
-                  <TableHeader className="sticky top-0 z-10 bg-card">
+              <div className="max-h-[500px] overflow-auto rounded-md border">
+                <table className="w-full caption-bottom text-sm">
+                  <TableHeader className="bg-card shadow-sm">
                     <TableRow>
-                      <TableHead className="min-w-[120px]">部门</TableHead>
-                      <TableHead className="min-w-[100px]">业务线</TableHead>
-                      <TableHead className="text-right">人数</TableHead>
-                      <TableHead className="text-right">人力成本(万)</TableHead>
-                      <TableHead className="text-right">预算人力成本(万)</TableHead>
-                      <TableHead className="text-right">预算差异(万)</TableHead>
-                      <TableHead className="text-right">预算使用率</TableHead>
+                      <TableHead className="sticky top-0 z-20 min-w-[120px] bg-card">{deptLabel}</TableHead>
+                      <TableHead className="sticky top-0 z-20 min-w-[100px] bg-card">{lineLabel}</TableHead>
+                      <TableHead className="sticky top-0 z-20 bg-card text-right">人数</TableHead>
+                      <TableHead className="sticky top-0 z-20 bg-card text-right">人力成本(万)</TableHead>
+                      <TableHead className="sticky top-0 z-20 bg-card text-right">预算人力成本(万)</TableHead>
+                      <TableHead className="sticky top-0 z-20 bg-card text-right">预算差异(万)</TableHead>
+                      <TableHead className="sticky top-0 z-20 bg-card text-right">预算使用率</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -790,7 +804,7 @@ export function ReportPage() {
                       );
                     })}
                   </TableBody>
-                </Table>
+                </table>
               </div>
             ) : <EmptyState />}
           </CardContent>
@@ -1411,7 +1425,7 @@ export function ReportPage() {
 
 function ReportLayout({ title, subtitle, children }: { title: string; subtitle: string; children: React.ReactNode }) {
   return (
-    <div className="space-y-6">
+    <div className="min-w-0 space-y-6">
       <div>
         <h2 className="text-2xl font-bold tracking-tight">{title}</h2>
         <p className="text-sm text-muted-foreground">{subtitle}</p>

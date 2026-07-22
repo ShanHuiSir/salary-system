@@ -1,4 +1,4 @@
-import type { DataType, DepartmentData, MonthlyOverview } from '@/types';
+import type { CostStructureData, DataType, DepartmentData, MonthlyOverview } from '@/types';
 import type { PersistedSalaryData } from '@/lib/api';
 import { toNumber, isBlank, roundTo, safeDivide, safePercent } from '@/utils/numberUtils';
 import { addMonths } from '@/utils/dateUtils';
@@ -46,6 +46,27 @@ function findByMonth<T extends { month: string }>(items: T[], month: string, pre
 
 function sumBy<T>(items: T[], selector: (item: T) => number): number {
   return items.reduce((sum, item) => sum + selector(item), 0);
+}
+
+function normalizeCostStructure(item: CostStructureData): CostStructureData {
+  const legacyLeavePay = toNumber(item.annualLeaveAllowance) + toNumber(item.sickLeavePay) + toNumber(item.maternityLeavePay);
+  const mergedLeavePay = toNumber(item.sickMaternityAnnualLeave);
+  const severance = toNumber(item.severance) || toNumber(item.jjbcj);
+
+  return {
+    ...item,
+    attendanceSalary: toNumber(item.attendanceSalary),
+    performanceBonus: toNumber(item.performanceBonus),
+    overtimePay: toNumber(item.overtimePay),
+    sickMaternityAnnualLeave: mergedLeavePay || legacyLeavePay,
+    severance,
+    jjbcj: toNumber(item.jjbcj),
+    annualLeaveAllowance: toNumber(item.annualLeaveAllowance),
+    sickLeavePay: toNumber(item.sickLeavePay),
+    maternityLeavePay: toNumber(item.maternityLeavePay),
+    otherPayable: toNumber(item.otherPayable),
+    employerSocialInsurance: toNumber(item.employerSocialInsurance),
+  };
 }
 
 function revenueForDepartment(overview: MonthlyOverview | undefined, department: DepartmentData['department']): number {
@@ -193,5 +214,6 @@ export function normalizeSalaryData(data: PersistedSalaryData): PersistedSalaryD
     departments,
     positions,
     stores,
+    costStructures: data.costStructures.map(normalizeCostStructure),
   };
 }

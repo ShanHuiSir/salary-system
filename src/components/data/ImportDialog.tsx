@@ -12,7 +12,6 @@ import {
 import { Progress } from '@/components/ui/progress';
 import { Badge } from '@/components/ui/badge';
 import { Checkbox } from '@/components/ui/checkbox';
-import { ScrollArea } from '@/components/ui/scroll-area';
 import {
   Table,
   TableBody,
@@ -30,11 +29,11 @@ import {
 import type { DataType } from '@/types';
 import { useData } from '@/contexts/DataContext';
 import { useFieldConfig } from '@/contexts/FieldConfigContext';
-import { getFormFields } from '@/types/fieldConfig';
+import { defaultFieldConfigs, getFormFields } from '@/types/fieldConfig';
 import { computeFormulaFields } from '@/utils/formulaEngine';
 import type { FieldDef } from '@/types/fieldConfig';
 import { parseCsvText, generateImportId, type ParsedRow } from '@/utils/csvParser';
-import { getCsvHeaderAliases } from '@/utils/fieldStandards';
+import { getCsvHeaderAliases, isDeprecatedFieldKey } from '@/utils/fieldStandards';
 
 const dataTypeLabels: Record<DataType, string> = {
   overview: '月度总览',
@@ -44,6 +43,16 @@ const dataTypeLabels: Record<DataType, string> = {
   store: '门店/区域数据',
   budget: '预算人力成本',
   costStructure: '人力成本组成',
+};
+
+const uniqueKeyLabels: Record<DataType, string> = {
+  overview: '月份',
+  department: '月份 + 部门',
+  composition: '月份 + 部门',
+  position: '月份 + 部门 + 层级',
+  store: '月份 + 区域',
+  budget: '月份 + 业务板块 + 中心 + 部门 + 业务线',
+  costStructure: '月份 + 业务板块',
 };
 
 /** 从字段配置生成 CSV 列名映射 */
@@ -90,11 +99,20 @@ export function ImportDialog({ open, onOpenChange, dataType }: ImportDialogProps
   const [importResult, setImportResult] = useState<{ success: number; failed: number; skipped: number; errorMsg?: string }>({ success: 0, failed: 0, skipped: 0 });
   const [fileName, setFileName] = useState('');
   const [fileError, setFileError] = useState<string | null>(null);
+  const [selectedImportMonths, setSelectedImportMonths] = useState<Set<string>>(new Set());
   const fileInputRef = useRef<HTMLInputElement>(null);
   const { batchAddItems } = useData();
   const { getFields } = useFieldConfig();
 
-  const formFields = useMemo(() => getFormFields(getFields(dataType)), [dataType, getFields]);
+  const formFields = useMemo(
+    () => {
+      const standardKeys = new Set(defaultFieldConfigs[dataType].map((field) => field.key));
+      return getFormFields(getFields(dataType))
+        .filter((field) => !isDeprecatedFieldKey(field.key))
+        .sort((a, b) => Number(!standardKeys.has(a.key)) - Number(!standardKeys.has(b.key)) || a.order - b.order);
+    },
+    [dataType, getFields]
+  );
   const allFields = useMemo(() => getFields(dataType), [dataType, getFields]);
   const formulaFields = useMemo(() => allFields.filter((f) => f.type === 'formula'), [allFields]);
   const csvColumns = useMemo(() => formFields.map(fieldToCsvColumn), [formFields]);
@@ -106,6 +124,7 @@ export function ImportDialog({ open, onOpenChange, dataType }: ImportDialogProps
     setImportResult({ success: 0, failed: 0, skipped: 0 });
     setFileName('');
     setFileError(null);
+    setSelectedImportMonths(new Set());
   }, []);
 
   const handleClose = useCallback(() => {
@@ -233,6 +252,7 @@ export function ImportDialog({ open, onOpenChange, dataType }: ImportDialogProps
       // 分析列匹配
       const result = parseWithConfig(csvColumns, headers, rows);
       setParseResult(result);
+      setSelectedImportMonths(new Set(getImportMonths(result.rows)));
       setStep('preview');
     } catch (err) {
       const msg = err instanceof Error ? err.message : '未知错误';
@@ -247,7 +267,9 @@ export function ImportDialog({ open, onOpenChange, dataType }: ImportDialogProps
 
     const validRows = parseResult?.rows.filter((r) => r.errors.length === 0) ?? [];
     const invalidRows = parseResult?.rows.filter((r) => r.errors.length > 0) ?? [];
-    const rowsToImport = skipInvalid ? validRows : (parseResult?.rows ?? []);
+    const sourceRows = skipInvalid ? validRows : (parseResult?.rows ?? []);
+    const rowsToImport = sourceRows.filter((r) => typeof r.data.month === 'string' && selectedImportMonths.has(r.data.month));
+    const unselectedCount = sourceRows.length - rowsToImport.length;
 
     const items = rowsToImport.map((r) => {
       const formulaValues = computeFormulaFields(r.data, allFields);
@@ -263,11 +285,10 @@ export function ImportDialog({ open, onOpenChange, dataType }: ImportDialogProps
     let errorMsg: string | undefined;
 
     try {
-      await batchAddItems(dataType, items);
-      successCount = items.length;
+      const result = await batchAddItems(dataType, items);
+      successCount = result.success;
       if (!skipInvalid) {
-        successCount = validRows.length;
-        failedCount = invalidRows.length;
+        failedCount = result.errors.length;
       }
     } catch (err) {
       failedCount = items.length;
@@ -277,15 +298,30 @@ export function ImportDialog({ open, onOpenChange, dataType }: ImportDialogProps
     setImportResult({
       success: successCount,
       failed: failedCount,
-      skipped: skipInvalid ? invalidRows.length : 0,
+      skipped: (skipInvalid ? invalidRows.length : 0) + unselectedCount,
       errorMsg,
     });
     setStep('result');
-  }, [parseResult, skipInvalid, dataType, batchAddItems, allFields]);
+  }, [parseResult, skipInvalid, selectedImportMonths, dataType, batchAddItems, allFields]);
 
   const validCount = parseResult?.rows.filter((r) => r.errors.length === 0).length ?? 0;
   const invalidCount = parseResult?.rows.filter((r) => r.errors.length > 0).length ?? 0;
   const emptyRowCount = parseResult?.emptyRows ?? 0;
+  const importMonths = useMemo(() => getImportMonths(parseResult?.rows ?? []), [parseResult]);
+  const selectedRowCount = useMemo(() => {
+    if (!parseResult) return 0;
+    const sourceRows = skipInvalid ? parseResult.rows.filter((r) => r.errors.length === 0) : parseResult.rows;
+    return sourceRows.filter((r) => typeof r.data.month === 'string' && selectedImportMonths.has(r.data.month)).length;
+  }, [parseResult, selectedImportMonths, skipInvalid]);
+
+  const handleToggleImportMonth = useCallback((month: string, checked: boolean) => {
+    setSelectedImportMonths((prev) => {
+      const next = new Set(prev);
+      if (checked) next.add(month);
+      else next.delete(month);
+      return next;
+    });
+  }, []);
 
   // 错误分类统计
   const errorCategories = useMemo(() => {
@@ -311,8 +347,8 @@ export function ImportDialog({ open, onOpenChange, dataType }: ImportDialogProps
 
   return (
     <Dialog open={open} onOpenChange={handleClose}>
-      <DialogContent className="max-w-4xl max-h-[90vh]">
-        <DialogHeader>
+      <DialogContent className="flex max-h-[90dvh] w-[calc(100vw-2rem)] max-w-5xl min-w-0 flex-col overflow-hidden p-0">
+        <DialogHeader className="shrink-0 px-6 pt-6">
           <DialogTitle className="flex items-center gap-2">
             <Upload className="h-5 w-5" />
             批量导入 - {dataTypeLabels[dataType]}
@@ -325,9 +361,10 @@ export function ImportDialog({ open, onOpenChange, dataType }: ImportDialogProps
           </DialogDescription>
         </DialogHeader>
 
+        <div className="min-w-0 flex-1 overflow-y-auto overflow-x-hidden px-6 py-4">
         {/* ==================== 上传步骤 ==================== */}
         {step === 'upload' && (
-          <div className="space-y-4">
+          <div className="min-w-0 space-y-4">
             {/* 文件错误提示 */}
             {fileError && (
               <div className="rounded-lg border border-red-200 bg-red-50 dark:border-red-800 dark:bg-red-950/30 p-4">
@@ -433,7 +470,7 @@ export function ImportDialog({ open, onOpenChange, dataType }: ImportDialogProps
 
         {/* ==================== 预览步骤 ==================== */}
         {step === 'preview' && parseResult && (
-          <div className="space-y-4">
+          <div className="min-w-0 space-y-4">
             {/* 文件信息 */}
             <div className="flex items-center gap-2 text-sm flex-wrap">
               <FileSpreadsheet className="h-4 w-4 text-muted-foreground" />
@@ -454,21 +491,49 @@ export function ImportDialog({ open, onOpenChange, dataType }: ImportDialogProps
               )}
             </div>
 
+            {/* 覆盖月份选择 */}
+            <div className="rounded-lg border border-blue-200 bg-blue-50/50 p-4 dark:border-blue-900/60 dark:bg-blue-950/20">
+              <div className="flex items-start gap-2">
+                <Info className="mt-0.5 h-4 w-4 flex-shrink-0 text-blue-500" />
+                <div className="min-w-0 flex-1 space-y-3">
+                  <div>
+                    <p className="text-sm font-medium text-blue-700 dark:text-blue-300">选择要覆盖导入的月份</p>
+                    <p className="mt-1 text-xs text-blue-600 dark:text-blue-400">
+                      系统按唯一键（{uniqueKeyLabels[dataType]}）导入/更新；同一唯一键已存在时会替换旧数据。
+                    </p>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    {importMonths.map((month) => (
+                      <label key={month} className="flex cursor-pointer items-center gap-2 rounded-md border bg-background px-2.5 py-1.5 text-xs">
+                        <Checkbox
+                          checked={selectedImportMonths.has(month)}
+                          onCheckedChange={(checked) => handleToggleImportMonth(month, checked === true)}
+                        />
+                        <span>{month}</span>
+                      </label>
+                    ))}
+                    {importMonths.length === 0 && <span className="text-xs text-muted-foreground">未识别到有效月份</span>}
+                  </div>
+                  <p className="text-xs text-muted-foreground">当前将导入/更新 {selectedRowCount} 行，未勾选月份的数据不会导入。</p>
+                </div>
+              </div>
+            </div>
+
             {/* 结构性错误提示（全局问题） */}
             {parseResult.structuralErrors.length > 0 && (
               <div className="rounded-lg border border-red-200 bg-red-50 dark:border-red-800 dark:bg-red-950/30 p-4">
                 <div className="flex items-start gap-2">
                   <AlertTriangle className="h-5 w-5 text-red-500 mt-0.5 flex-shrink-0" />
-                  <div className="flex-1">
+                  <div className="min-w-0 flex-1">
                     <p className="text-sm font-medium text-red-700 dark:text-red-300">文件结构问题</p>
                     <p className="text-xs text-red-600 dark:text-red-400 mt-1 mb-2">
                       以下问题影响所有数据行，请修正 CSV 文件后重新上传：
                     </p>
                     <ul className="space-y-1.5">
                       {parseResult.structuralErrors.map((err, i) => (
-                        <li key={i} className="text-xs text-red-600 dark:text-red-400 flex items-start gap-1.5">
+                        <li key={i} className="flex min-w-0 items-start gap-1.5 text-xs text-red-600 dark:text-red-400">
                           <span className="text-red-400">•</span>
-                          <span>{err}</span>
+                          <span className="min-w-0 break-words">{err}</span>
                         </li>
                       ))}
                     </ul>
@@ -478,7 +543,7 @@ export function ImportDialog({ open, onOpenChange, dataType }: ImportDialogProps
             )}
 
             {/* 列匹配诊断 */}
-            <div className="rounded-lg border p-4">
+            <div className="min-w-0 rounded-lg border p-4">
               <div className="flex items-center gap-2 mb-3">
                 <Columns3 className="h-4 w-4 text-muted-foreground" />
                 <p className="text-sm font-medium">列匹配结果</p>
@@ -491,9 +556,9 @@ export function ImportDialog({ open, onOpenChange, dataType }: ImportDialogProps
                       <CheckCircle2 className="h-3.5 w-3.5" />
                       已识别 {parseResult.columnMatch.matched.length} 列
                     </p>
-                    <div className="flex flex-wrap gap-1.5 ml-5">
+                    <div className="ml-5 flex min-w-0 flex-wrap gap-1.5">
                       {parseResult.columnMatch.matched.map((c) => (
-                        <Badge key={c.fieldKey} variant="outline" className="text-xs bg-green-500/5 border-green-500/20">
+                        <Badge key={c.fieldKey} variant="outline" className="max-w-full break-words whitespace-normal text-xs bg-green-500/5 border-green-500/20">
                           {c.csvHeader}
                           {c.required && <span className="text-red-500 ml-1">*</span>}
                         </Badge>
@@ -508,9 +573,9 @@ export function ImportDialog({ open, onOpenChange, dataType }: ImportDialogProps
                       <XCircle className="h-3.5 w-3.5" />
                       缺少 {parseResult.columnMatch.missing.length} 个必填列
                     </p>
-                    <div className="flex flex-wrap gap-1.5 ml-5">
+                    <div className="ml-5 flex min-w-0 flex-wrap gap-1.5">
                       {parseResult.columnMatch.missing.map((c) => (
-                        <Badge key={c.fieldKey} variant="outline" className="text-xs bg-red-500/5 border-red-500/20 text-red-600">
+                        <Badge key={c.fieldKey} variant="outline" className="max-w-full break-words whitespace-normal text-xs bg-red-500/5 border-red-500/20 text-red-600">
                           {c.csvHeader}
                         </Badge>
                       ))}
@@ -527,9 +592,9 @@ export function ImportDialog({ open, onOpenChange, dataType }: ImportDialogProps
                       <AlertTriangle className="h-3.5 w-3.5" />
                       {parseResult.columnMatch.unknown.length} 个未识别的列（将忽略）
                     </p>
-                    <div className="flex flex-wrap gap-1.5 ml-5">
+                    <div className="ml-5 flex min-w-0 flex-wrap gap-1.5">
                       {parseResult.columnMatch.unknown.map((c, i) => (
-                        <Badge key={i} variant="outline" className="text-xs bg-amber-500/5 border-amber-500/20 text-amber-600">
+                        <Badge key={i} variant="outline" className="max-w-full break-words whitespace-normal text-xs bg-amber-500/5 border-amber-500/20 text-amber-600">
                           {c}
                         </Badge>
                       ))}
@@ -546,7 +611,7 @@ export function ImportDialog({ open, onOpenChange, dataType }: ImportDialogProps
                   <Info className="h-4 w-4 text-amber-500 mt-0.5 flex-shrink-0" />
                   <div className="space-y-1">
                     {parseResult.warnings.map((w, i) => (
-                      <p key={i} className="text-xs text-amber-700 dark:text-amber-300">{w}</p>
+                      <p key={i} className="min-w-0 break-words text-xs text-amber-700 dark:text-amber-300">{w}</p>
                     ))}
                   </div>
                 </div>
@@ -573,7 +638,7 @@ export function ImportDialog({ open, onOpenChange, dataType }: ImportDialogProps
                           </div>
                           <div className="space-y-0.5">
                             {cat.samples.map((s, i) => (
-                              <p key={i} className="text-xs text-muted-foreground">• {s}</p>
+                              <p key={i} className="break-words text-xs text-muted-foreground">• {s}</p>
                             ))}
                             {cat.count > cat.samples.length && (
                               <p className="text-xs text-muted-foreground italic">... 还有 {cat.count - cat.samples.length} 处类似错误</p>
@@ -602,8 +667,8 @@ export function ImportDialog({ open, onOpenChange, dataType }: ImportDialogProps
             )}
 
             {/* 数据预览表格 */}
-            <ScrollArea className="h-[280px] rounded-md border">
-              <Table>
+            <div className="h-[280px] w-full max-w-full overflow-auto rounded-md border">
+              <Table className="min-w-max">
                 <TableHeader>
                   <TableRow>
                     <TableHead className="w-10">#</TableHead>
@@ -649,7 +714,7 @@ export function ImportDialog({ open, onOpenChange, dataType }: ImportDialogProps
                   })}
                 </TableBody>
               </Table>
-            </ScrollArea>
+            </div>
           </div>
         )}
 
@@ -664,7 +729,7 @@ export function ImportDialog({ open, onOpenChange, dataType }: ImportDialogProps
 
         {/* ==================== 导入结果 ==================== */}
         {step === 'result' && (
-          <div className="space-y-4">
+          <div className="min-w-0 space-y-4">
             <div className="flex flex-col items-center py-4">
               {importResult.failed === 0 && importResult.errorMsg === undefined ? (
                 <>
@@ -727,7 +792,9 @@ export function ImportDialog({ open, onOpenChange, dataType }: ImportDialogProps
           </div>
         )}
 
-        <DialogFooter>
+        </div>
+
+        <DialogFooter className="shrink-0 border-t bg-background px-6 py-4">
           {step === 'upload' && (
             <Button variant="outline" onClick={handleClose}>取消</Button>
           )}
@@ -741,12 +808,13 @@ export function ImportDialog({ open, onOpenChange, dataType }: ImportDialogProps
                 onClick={handleImport}
                 disabled={
                   (parseResult?.structuralErrors?.length ?? 0) > 0 ||
+                  selectedRowCount === 0 ||
                   (skipInvalid && validCount === 0) ||
                   (!skipInvalid && (parseResult?.rows.length ?? 0) === 0)
                 }
               >
                 <Eye className="mr-1.5 h-4 w-4" />
-                确认导入 ({skipInvalid ? validCount : parseResult?.rows.length ?? 0} 行)
+                确认覆盖导入 ({selectedRowCount} 行)
               </Button>
             </>
           )}
@@ -757,6 +825,14 @@ export function ImportDialog({ open, onOpenChange, dataType }: ImportDialogProps
       </DialogContent>
     </Dialog>
   );
+}
+
+function getImportMonths(rows: ParsedRow[]): string[] {
+  return [...new Set(
+    rows
+      .map((row) => row.data.month)
+      .filter((month): month is string => typeof month === 'string' && /^\d{4}-\d{2}$/.test(month))
+  )].sort((a, b) => b.localeCompare(a));
 }
 
 /** 使用动态字段配置解析 CSV 行，分离结构性错误和行级错误 */
@@ -775,7 +851,7 @@ function parseWithConfig(
   const headerMap = new Map<string, typeof csvColumns[0]>();
   for (const c of csvColumns) {
     for (const header of getCsvHeaderAliases(c.fieldKey, c.csvHeader)) {
-      headerMap.set(header, c);
+      if (!headerMap.has(header)) headerMap.set(header, c);
     }
   }
 
@@ -850,7 +926,7 @@ function parseWithConfig(
 
       // 空值处理
       if (rawValue === '' && !col.required) {
-        data[col.fieldKey] = col.type === 'number' ? 0 : '';
+        if (data[col.fieldKey] === undefined) data[col.fieldKey] = col.type === 'number' ? 0 : '';
         continue;
       }
 
@@ -862,12 +938,12 @@ function parseWithConfig(
       // 数字类型验证
       if (col.type === 'number') {
         // 去除可能的全角字符
-        const cleaned = rawValue.replace(/，/g, ',').replace(/¥/g, '').replace(/万/g, '').replace(/%/g, '').trim();
+        const cleaned = rawValue.replace(/[，,]/g, '').replace(/¥/g, '').replace(/万/g, '').replace(/%/g, '').trim();
         const num = parseFloat(cleaned);
         if (Number.isNaN(num)) {
           errors.push(`${col.csvHeader}的值 "${rawValue}" 不是有效数字（请去掉逗号、单位等符号）`);
         } else {
-          data[col.fieldKey] = num;
+          data[col.fieldKey] = typeof data[col.fieldKey] === 'number' ? (data[col.fieldKey] as number) + num : num;
         }
       } else if (col.type === 'enum' && col.enumValues) {
         if (!col.enumValues.includes(rawValue)) {

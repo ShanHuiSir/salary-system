@@ -9,7 +9,6 @@ import { ErrorBoundary } from '@/components/ErrorBoundary';
 import { useAuth } from '@/hooks/useAuth';
 import { Toaster } from '@/components/ui/sonner';
 import {
-  canAccessDataBinding,
   canAccessDataManagement,
   canAccessReports,
   canManageUsers,
@@ -20,7 +19,6 @@ const DashboardPage = lazy(() => import('@/pages/DashboardPage').then(({ Dashboa
 const DataListPage = lazy(() => import('@/pages/DataListPage').then(({ DataListPage }) => ({ default: DataListPage })));
 const DataFormPage = lazy(() => import('@/pages/DataFormPage').then(({ DataFormPage }) => ({ default: DataFormPage })));
 const ReportPage = lazy(() => import('@/pages/ReportPage').then(({ ReportPage }) => ({ default: ReportPage })));
-const DataBindingPage = lazy(() => import('@/pages/DataBindingPage').then(({ DataBindingPage }) => ({ default: DataBindingPage })));
 const UserManagementPage = lazy(() => import('@/pages/UserManagementPage').then(({ UserManagementPage }) => ({ default: UserManagementPage })));
 
 function PageFallback() {
@@ -62,7 +60,6 @@ function AppContent() {
                   <Route path="/report/:scope/:type" element={<ErrorBoundary><ProtectedRoute allowed={canAccessReports(user)}><ReportPageWrapper /></ProtectedRoute></ErrorBoundary>} />
                   <Route path="/data" element={<ErrorBoundary><ProtectedRoute allowed={canAccessDataManagement(user)}><DataListPage user={user} /></ProtectedRoute></ErrorBoundary>} />
                   <Route path="/data/:type/:id" element={<ErrorBoundary><ProtectedRoute allowed={canAccessDataManagement(user)}><DataFormPage user={user} /></ProtectedRoute></ErrorBoundary>} />
-                  <Route path="/data-binding" element={<ErrorBoundary><ProtectedRoute allowed={canAccessDataBinding(user)}><DataBindingPage /></ProtectedRoute></ErrorBoundary>} />
                   <Route path="/users" element={<ErrorBoundary><ProtectedRoute allowed={canManageUsers(user)}><UserManagementPage currentUser={user as AuthUser} /></ProtectedRoute></ErrorBoundary>} />
                   <Route path="*" element={<Navigate to="/dashboard" replace />} />
                 </Routes>

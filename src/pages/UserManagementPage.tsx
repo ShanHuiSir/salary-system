@@ -282,9 +282,9 @@ export function UserManagementPage({ currentUser }: UserManagementPageProps) {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="min-w-0 space-y-6">
       <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-        <div>
+        <div className="min-w-0">
           <h2 className="text-2xl font-bold tracking-tight">账号管理</h2>
           <p className="text-sm text-muted-foreground">创建账号、分配角色、停用账号和重置密码。</p>
         </div>
@@ -298,7 +298,7 @@ export function UserManagementPage({ currentUser }: UserManagementPageProps) {
         </div>
       </div>
 
-      <Card>
+      <Card className="min-w-0">
         <CardHeader className="gap-4 md:flex-row md:items-center md:justify-between">
           <CardTitle className="flex items-center gap-2 text-base">
             <ShieldCheck className="h-5 w-5" />账号列表
@@ -313,9 +313,9 @@ export function UserManagementPage({ currentUser }: UserManagementPageProps) {
             />
           </div>
         </CardHeader>
-        <CardContent>
-          <div className="rounded-md border">
-            <Table>
+        <CardContent className="min-w-0">
+          <div className="w-full max-w-full overflow-auto rounded-md border">
+            <Table className="min-w-[760px]">
               <TableHeader>
                 <TableRow>
                   <TableHead>账号</TableHead>
