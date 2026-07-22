@@ -1,9 +1,13 @@
 #!/usr/bin/env bash
-# 一键同步本机代码到公司服务器并重新构建启动。
+# 安全同步本机代码到公司服务器并重新构建启动。
 # 默认服务器：ouni777@192.168.0.235:/opt/salary-system
 # 用法：
 #   ./sync-to-server.sh
 #   ./sync-to-server.sh 用户名@服务器IP /服务器项目目录
+#
+# 减少密码输入次数：
+#   1. 推荐先执行 bash scripts/setup-ssh-key.sh <user@server> 配置免密登录（一劳永逸）
+#   2. 脚本已启用 SSH 连接复用，未配密钥时只需输入一次 SSH 密码
 
 set -euo pipefail
 
@@ -11,8 +15,17 @@ SERVER="${1:-${SERVER:-ouni777@192.168.0.235}}"
 REMOTE_DIR="${2:-${REMOTE_DIR:-/opt/salary-system}}"
 SERVER_HOST="${SERVER#*@}"
 TMP_DIR="/tmp/salary-system-sync-$(date +%Y%m%d%H%M%S)"
-CONTROL_PATH="/tmp/salary-system-ssh-${SERVER_HOST}-$$"
 LOCAL_REMOTE_SCRIPT="$(mktemp)"
+SSH_CONTROL_DIR="/tmp/salary-system-ssh-$$"
+SSH_CTL="${SSH_CONTROL_DIR}/ctl-%r@%h:%p"
+
+if [[ -z "$SERVER" ]]; then
+  echo "用法：$0 <user@server> [远程项目目录]" >&2
+  echo "示例：$0 ouni777@192.168.0.235" >&2
+  echo ""
+  echo "💡 首次使用建议先配免密登录：bash scripts/setup-ssh-key.sh <user@server>" >&2
+  exit 64
+fi
 
 if [[ ! "$SERVER" =~ ^[a-zA-Z0-9._-]+@[a-zA-Z0-9.-]+$ ]]; then
   echo "SERVER 格式不合法，仅支持 user@host 形式" >&2
@@ -24,10 +37,21 @@ if [[ ! "$REMOTE_DIR" =~ ^/[a-zA-Z0-9._/-]+$ ]]; then
   exit 64
 fi
 
+mkdir -p "$SSH_CONTROL_DIR"
+chmod 700 "$SSH_CONTROL_DIR"
+
+SSH_OPTS=(
+  -o ControlMaster=auto
+  -o ControlPath="$SSH_CTL"
+  -o ControlPersist=600
+  -o ServerAliveInterval=60
+)
+
 cleanup() {
+  ssh -o ControlPath="$SSH_CTL" -O exit "$SERVER" >/dev/null 2>&1 || true
+  ssh "${SSH_OPTS[@]}" "$SERVER" "rm -rf '$TMP_DIR'" >/dev/null 2>&1 || true
+  rm -rf "$SSH_CONTROL_DIR"
   rm -f "$LOCAL_REMOTE_SCRIPT"
-  ssh -S "$CONTROL_PATH" -O exit "$SERVER" >/dev/null 2>&1 || true
-  rm -f "$CONTROL_PATH"
 }
 trap cleanup EXIT
 
@@ -56,6 +80,7 @@ sudo rsync -a --delete \
   --exclude='.remote-deploy.sh' \
   "$tmp_dir/" "$remote_dir/"
 sudo chown -R "$USER:" "$remote_dir"
+
 cd "$remote_dir"
 
 if [ ! -f .env ]; then
@@ -92,7 +117,7 @@ generate_secret() {
 
 require_secret() {
   local key="$1" value
-  value="$(grep -E "^${key}=" .env | tail -n 1 | cut -d= -f2- || true)"
+  value="$(get_env_value "$key")"
   if [ -z "$value" ] || [[ "$value" == *change-me* ]] || [[ "$value" == *your_* ]] || { [ "$key" = ADMIN_PASSWORD ] && [ "${#value}" -lt 12 ]; }; then
     value="$(generate_secret)"
     update_env "$key" "$value"
@@ -166,18 +191,37 @@ for i in $(seq 1 60); do
   sleep 2
 done
 
+for i in $(seq 1 30); do
+  if curl -fsS "http://127.0.0.1/" >/dev/null 2>&1; then
+    echo "✅ 前端访问检查通过：http://$server_host"
+    break
+  fi
+
+  if [ "$i" -eq 30 ]; then
+    echo "❌ 前端访问检查失败：等待 60 秒后仍无法访问 http://127.0.0.1/" >&2
+    echo "最近前端日志：" >&2
+    sudo docker logs --tail=80 salary-client >&2 || true
+    exit 1
+  fi
+
+  echo "等待前端启动中... ($i/30)"
+  sleep 2
+done
+
 rm -rf "$tmp_dir"
 REMOTE_SCRIPT
 
-SSH=(ssh -o ControlMaster=auto -o ControlPath="$CONTROL_PATH" -o ControlPersist=10m)
-RSYNC_SSH="ssh -o ControlMaster=auto -o ControlPath=$CONTROL_PATH -o ControlPersist=10m"
+chmod +x "$LOCAL_REMOTE_SCRIPT"
 
-echo "[0/4] 建立到服务器的连接：$SERVER"
+echo "🔗 建立 SSH 主连接（连接复用模式下只需这一次认证）..."
 echo "如果提示 password，请输入服务器用户密码。"
-"${SSH[@]}" -MNf "$SERVER" || true
+ssh "${SSH_OPTS[@]}" -fN "$SERVER" 2>&1 || true
+echo ""
 
-echo "[1/4] 同步代码到临时目录：$SERVER:$TMP_DIR"
-rsync -az --delete -e "$RSYNC_SSH" \
+RSYNC_OPTS=(-az --delete -e "ssh ${SSH_OPTS[*]}")
+
+printf '[1/4] 同步代码到服务器临时目录：%s:%s\n' "$SERVER" "$TMP_DIR"
+rsync "${RSYNC_OPTS[@]}" \
   --exclude='.git/' \
   --exclude='node_modules/' \
   --exclude='server/node_modules/' \
@@ -188,13 +232,13 @@ rsync -az --delete -e "$RSYNC_SSH" \
   --exclude='.env.*.backup' \
   ./ "$SERVER:$TMP_DIR/"
 
-rsync -az -e "$RSYNC_SSH" "$LOCAL_REMOTE_SCRIPT" "$SERVER:$TMP_DIR/.remote-deploy.sh"
+rsync -az -e "ssh ${SSH_OPTS[*]}" "$LOCAL_REMOTE_SCRIPT" "$SERVER:$TMP_DIR/.remote-deploy.sh"
 
-echo "[2/4] 发布代码、校验环境、构建并启动服务"
+printf '[2/4] 发布代码、校验环境、构建并启动服务\n'
 echo "如果提示 [sudo] password，请输入服务器用户密码。密码输入时不会显示。"
-"${SSH[@]}" -tt "$SERVER" "bash '$TMP_DIR/.remote-deploy.sh' '$REMOTE_DIR' '$TMP_DIR' '$SERVER_HOST'"
+ssh "${SSH_OPTS[@]}" -tt "$SERVER" "bash '$TMP_DIR/.remote-deploy.sh' '$REMOTE_DIR' '$TMP_DIR' '$SERVER_HOST'"
 
-echo "[3/4] 同步与部署已完成"
-echo "[4/4] 请访问：http://$SERVER_HOST"
+printf '[3/4] 同步与部署已完成\n'
+printf '[4/4] 请访问：http://%s\n' "$SERVER_HOST"
 echo "账号：Mixmind"
 echo "密码：以服务器 .env 中 ADMIN_PASSWORD 为准（脚本会在缺失或过短时自动生成）"
